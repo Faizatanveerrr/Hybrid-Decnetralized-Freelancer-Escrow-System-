@@ -1,0 +1,4 @@
+vyper==0.4.3
+titanoboa==0.2.8
+eth-ape==0.8.50
+pytest==8.4.2
