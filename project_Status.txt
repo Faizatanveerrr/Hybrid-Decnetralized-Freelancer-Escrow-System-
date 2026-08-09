@@ -1,5 +1,3 @@
-
-```markdown
 # Decentralized Freelancer Escrow System — Project Status
 
 **Last updated:** August 2026
@@ -32,7 +30,6 @@ A blockchain-based escrow system for freelance payments, using milestone-based s
 | **RPC provider** | Alchemy (free tier) |
 | **Wallet** | MetaMask |
 | **Decentralized storage** | IPFS via Pinata (free tier) |
-| **AI arbitration model** | Amazon Nova Lite via AWS Bedrock |
 | **Frontend (planned, not built)** | React.js, Tailwind CSS |
 | **Backend (planned, not built)** | Node.js/Express + Python (AI module) |
 | **Off-chain metadata DB (planned, not built)** | MongoDB |
@@ -72,8 +69,6 @@ Key functions:
 **`contracts/MockUSDC.vy`** — a fake USDC token used only for local testing (has a `mint()` function to create test tokens freely). Not used in testnet/production — real USDC is used there instead.
 
 **`contracts/HelloEscrow.vy`** — a throwaway "hello world" contract used early on just to confirm the Vyper→Titanoboa→pytest toolchain worked. Not part of the actual system, safe to ignore/delete.
-
-**`contracts/EscrowJobFastTest.vy`** — identical to `EscrowJob.vy` except `APPEAL_PERIOD` is 60 seconds instead of 3 days. Throwaway, used only to prove `finalize_ruling()` live without a real 3-day wait. Not for production use.
 
 ### 3.2 Tests
 
@@ -119,7 +114,7 @@ Deployment parameters used:
 
 ---
 
-## 3.5 AI Arbitration — Fully Proven Live
+## 3.5 AI Arbitration — Fully Proven Live (major update)
 
 The complete dispute resolution pipeline has now been executed **live on Base Sepolia**, with every single contract function in the arbitration flow verified working correctly against a real, public blockchain (not just local simulated tests).
 
@@ -165,7 +160,7 @@ Every real transaction on this RPC setup (Alchemy free tier + Titanoboa) throws 
 
 ### Contract addresses reference
 ```
-Main contract:       0xB2012dc47b963a6e5edfaadcf707aca10edbfa58
+Main contract:      0xB2012dc47b963a6e5edfaadcf707aca10edbfa58
 Fast-test contract:  0xe0BE70ef3949383157205416B2edCF8cFDd0Dc89  (throwaway, 60s appeal window, DO NOT use for anything real)
 ```
 
@@ -176,26 +171,16 @@ Fast-test contract:  0xe0BE70ef3949383157205416B2edCF8cFDd0Dc89  (throwaway, 60s
 ```
 escrow-system-starter/
 ├── contracts/
-│   ├── EscrowJob.vy              ← the real escrow contract
-│   ├── MockUSDC.vy               ← test-only fake USDC
-│   ├── HelloEscrow.vy            ← throwaway toolchain test, safe to ignore
-│   └── EscrowJobFastTest.vy      ← throwaway 60s-appeal-window test variant
+│   ├── EscrowJob.vy          ← the real escrow contract
+│   ├── MockUSDC.vy           ← test-only fake USDC
+│   └── HelloEscrow.vy        ← throwaway toolchain test, safe to ignore
 ├── tests/
 │   ├── test_smoke.py
 │   ├── test_escrow.py
 │   └── test_dispute.py
 ├── scripts/
-│   ├── ipfs_client.py                  ← Pinata/IPFS upload helper
-│   ├── deploy_testnet.py               ← deploys EscrowJob.vy to Base Sepolia
-│   ├── deploy_fast_test.py             ← deploys the fast-test variant
-│   ├── testnet_flow.py                 ← fund -> submit -> dispute on the live contract
-│   ├── ai_arbitrate.py                 ← AI arbitration: fetches evidence, calls Nova Lite, submits ruling
-│   ├── appeal_dispute.py               ← appeals a ruling as the freelancer
-│   ├── submit_secondary_ruling.py      ← submits final binding ruling
-│   ├── fast_test_flow.py               ← full automated flow incl. finalize_ruling()
-│   ├── check_milestone.py              ← on-chain milestone state checker
-│   ├── check_usdc.py                   ← client USDC balance checker
-│   └── check_freelancer_balance.py     ← freelancer USDC balance checker
+│   ├── ipfs_client.py        ← Pinata/IPFS upload helper
+│   └── deploy_testnet.py     ← Base Sepolia deployment script
 ├── .env                      ← SECRETS, never commit (see below)
 ├── .gitignore                ← protects .env from being committed
 ├── requirements.txt
@@ -208,13 +193,7 @@ escrow-system-starter/
 PINATA_JWT=...
 BASE_SEPOLIA_RPC_URL=https://base-sepolia.g.alchemy.com/v2/...
 DEPLOYER_PRIVATE_KEY=...
-FREELANCER_PRIVATE_KEY=...
-ARBITRATOR_PRIVATE_KEY=...
-AWS_ACCESS_KEY_ID=...
-AWS_SECRET_ACCESS_KEY=...
-AWS_REGION=us-east-1
 DEPLOYED_ESCROW_ADDRESS=0xB2012dc47b963a6e5edfaadcf707aca10edbfa58
-DEPLOYED_FASTTEST_ADDRESS=0xe0BE70ef3949383157205416B2edCF8cFDd0Dc89
 ```
 
 ---
@@ -238,7 +217,6 @@ pytest
 - Use **PowerShell**, not Command Prompt — some commands (`mkdir -p`, `Get-Content`) only work in PowerShell
 - Always confirm `(venv)` appears in the prompt before running `pip install`, or packages install system-wide instead of in the isolated environment
 - Vyper 0.4.3 requires exact syntax — copy-paste carefully, a single truncated string in a long file will break compilation (this happened once with `EscrowJob.vy` and was fixed by checking the file's tail with `Get-Content -Tail`)
-- On this RPC setup, real transactions sometimes throw a harmless error immediately after succeeding (see section 3.5) — if a script crashes right after "tx broadcasted... mined in block...", the transaction almost certainly succeeded; check on-chain state before assuming failure
 
 ---
 
@@ -250,8 +228,6 @@ pytest
 | **Alchemy** | RPC provider for Base Sepolia | ✅ Set up (watch out: easy to accidentally create a Mainnet app instead of Sepolia — happened once, had to redo) |
 | **Pinata** | IPFS file storage | ✅ Set up, confirmed working |
 | **Base Sepolia faucet** | Free testnet ETH | ✅ Used (Coinbase Developer Platform faucet + Alchemy faucet) |
-| **Circle USDC faucet** | Free testnet USDC | ✅ Used (faucet.circle.com) |
-| **AWS Bedrock** | Amazon Nova Lite access for AI arbitration | ✅ Set up, confirmed working |
 
 ---
 
@@ -274,12 +250,17 @@ The full fund → submit → approve/dispute → AI ruling → appeal → second
 - Real money, real USDC, real gas fees — a much later step after thorough testing and possibly a security audit
 
 ---
-## 8. Key Learnings / Gotchas (useful context for troubleshooting)
+
+## 8. Suggested Next Prompt for a Fresh Claude Session
+
+> "I'm continuing a Decentralized Freelancer Escrow System project. Here's the full status document: [paste this file]. The smart contract is built, tested (45 tests passing), and deployed live on Base Sepolia at `0xB2012dc47b963a6e5edfaadcf707aca10edbfa58`. IPFS upload works via Pinata. Next, I want to build the off-chain AI arbitration script that watches for disputes and calls an LLM to rule on them, then submits the ruling on-chain."
+
+---
+
+## 9. Key Learnings / Gotchas (useful context for troubleshooting)
 
 - Vyper + Ape/Titanoboa was chosen over Solidity + Hardhat because the methodology specified Vyper, and Hardhat doesn't properly support it
 - Base Sepolia was chosen over Ethereum Sepolia or zkSync for lower fees and simpler tooling compatibility
 - Alchemy apps must be explicitly created for **Sepolia**, not Mainnet — the network selector is easy to misclick
 - Testnet ETH faucets often give tiny amounts per request (e.g. 0.0001 ETH) — may need multiple requests to accumulate enough for a contract deployment
-- Real transactions on this RPC setup consistently throw a harmless `TypeError` immediately **after** succeeding (a timing/race condition between Titanoboa's post-transaction state sync and the RPC indexing the latest block) — confirmed repeatedly via BaseScan that the underlying transaction always succeeded regardless of this error
-- When automating multi-step flows, wrap each transaction in retry logic rather than assuming failure on this error — see `fast_test_flow.py` for the pattern used
-```
+- A `TypeError` occurred in Titanoboa immediately after a successful deployment transaction (a post-deploy sync bug, likely related to the free-tier RPC not supporting `debug_traceTransaction`) — the deployment itself still succeeded and was confirmed directly on BaseScan, so this error was safe to ignore
