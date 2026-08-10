@@ -1,0 +1,156 @@
+[
+  {
+    "type": "constructor",
+    "inputs": [
+      { "name": "freelancer", "type": "address" },
+      { "name": "token", "type": "address" },
+      { "name": "arbitrator", "type": "address" },
+      { "name": "review_period", "type": "uint256" },
+      { "name": "milestone_amounts", "type": "uint256[]" }
+    ]
+  },
+  {
+    "type": "function",
+    "name": "client",
+    "stateMutability": "view",
+    "inputs": [],
+    "outputs": [{ "name": "", "type": "address" }]
+  },
+  {
+    "type": "function",
+    "name": "freelancer",
+    "stateMutability": "view",
+    "inputs": [],
+    "outputs": [{ "name": "", "type": "address" }]
+  },
+  {
+    "type": "function",
+    "name": "arbitrator",
+    "stateMutability": "view",
+    "inputs": [],
+    "outputs": [{ "name": "", "type": "address" }]
+  },
+  {
+    "type": "function",
+    "name": "token",
+    "stateMutability": "view",
+    "inputs": [],
+    "outputs": [{ "name": "", "type": "address" }]
+  },
+  {
+    "type": "function",
+    "name": "review_period",
+    "stateMutability": "view",
+    "inputs": [],
+    "outputs": [{ "name": "", "type": "uint256" }]
+  },
+  {
+    "type": "function",
+    "name": "milestone_count",
+    "stateMutability": "view",
+    "inputs": [],
+    "outputs": [{ "name": "", "type": "uint256" }]
+  },
+  {
+    "type": "function",
+    "name": "milestones",
+    "stateMutability": "view",
+    "inputs": [{ "name": "arg0", "type": "uint256" }],
+    "outputs": [
+      { "name": "amount", "type": "uint256" },
+      { "name": "status", "type": "uint256" },
+      { "name": "proof_uri", "type": "string" },
+      { "name": "submitted_at", "type": "uint256" },
+      { "name": "disputed_by", "type": "address" },
+      { "name": "ruling_winner", "type": "address" },
+      { "name": "ruling_confidence", "type": "uint256" },
+      { "name": "ruling_uri", "type": "string" },
+      { "name": "ruling_submitted_at", "type": "uint256" },
+      { "name": "appeal_deadline", "type": "uint256" },
+      { "name": "appealed", "type": "bool" },
+      { "name": "needs_secondary_review", "type": "bool" }
+    ]
+  },
+  {
+    "type": "function",
+    "name": "fund_milestone",
+    "stateMutability": "nonpayable",
+    "inputs": [{ "name": "milestone_id", "type": "uint256" }],
+    "outputs": []
+  },
+  {
+    "type": "function",
+    "name": "submit_milestone",
+    "stateMutability": "nonpayable",
+    "inputs": [
+      { "name": "milestone_id", "type": "uint256" },
+      { "name": "proof_uri", "type": "string" }
+    ],
+    "outputs": []
+  },
+  {
+    "type": "function",
+    "name": "approve_milestone",
+    "stateMutability": "nonpayable",
+    "inputs": [{ "name": "milestone_id", "type": "uint256" }],
+    "outputs": []
+  },
+  {
+    "type": "function",
+    "name": "cancel_milestone",
+    "stateMutability": "nonpayable",
+    "inputs": [{ "name": "milestone_id", "type": "uint256" }],
+    "outputs": []
+  },
+  {
+    "type": "function",
+    "name": "claim_after_timeout",
+    "stateMutability": "nonpayable",
+    "inputs": [{ "name": "milestone_id", "type": "uint256" }],
+    "outputs": []
+  },
+  {
+    "type": "function",
+    "name": "raise_dispute",
+    "stateMutability": "nonpayable",
+    "inputs": [{ "name": "milestone_id", "type": "uint256" }],
+    "outputs": []
+  },
+  {
+    "type": "function",
+    "name": "submit_ruling",
+    "stateMutability": "nonpayable",
+    "inputs": [
+      { "name": "milestone_id", "type": "uint256" },
+      { "name": "winner", "type": "address" },
+      { "name": "confidence", "type": "uint256" },
+      { "name": "ruling_uri", "type": "string" }
+    ],
+    "outputs": []
+  },
+  {
+    "type": "function",
+    "name": "appeal_ruling",
+    "stateMutability": "nonpayable",
+    "inputs": [{ "name": "milestone_id", "type": "uint256" }],
+    "outputs": []
+  },
+  {
+    "type": "function",
+    "name": "submit_secondary_ruling",
+    "stateMutability": "nonpayable",
+    "inputs": [
+      { "name": "milestone_id", "type": "uint256" },
+      { "name": "winner", "type": "address" },
+      { "name": "ruling_uri", "type": "string" }
+    ],
+    "outputs": []
+  },
+  {
+    "type": "function",
+    "name": "finalize_ruling",
+    "stateMutability": "nonpayable",
+    "inputs": [{ "name": "milestone_id", "type": "uint256" }],
+    "outputs": []
+  }
+]

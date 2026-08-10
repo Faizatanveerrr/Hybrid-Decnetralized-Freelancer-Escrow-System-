@@ -1,0 +1,42 @@
+@tailwind base;
+@tailwind components;
+@tailwind utilities;
+
+@layer base {
+  * {
+    @apply border-border;
+  }
+  body {
+    @apply bg-bg text-ink antialiased;
+  }
+  ::selection {
+    @apply bg-accent/30 text-ink;
+  }
+  :focus-visible {
+    outline: 2px solid #0052ff;
+    outline-offset: 2px;
+  }
+}
+
+@layer components {
+  .input {
+    @apply bg-surface2 border border-border rounded-md px-3 py-2 text-sm font-mono-tight focus:border-accent outline-none w-full;
+  }
+}
+
+@layer utilities {
+  .font-display {
+    font-family: "Space Grotesk", sans-serif;
+  }
+  .font-mono-tight {
+    font-family: "IBM Plex Mono", monospace;
+    letter-spacing: -0.01em;
+  }
+}
+
+@media (prefers-reduced-motion: reduce) {
+  * {
+    animation-duration: 0.001ms !important;
+    transition-duration: 0.001ms !important;
+  }
+}
