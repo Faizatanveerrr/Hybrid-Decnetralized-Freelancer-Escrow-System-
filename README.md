@@ -1,6 +1,6 @@
 # 🔐 Decentralized Freelancer Escrow System — Project Status
 
-> **Last updated:** August 2026
+> **Last updated:** August 2026 (happy path & timeout-claim live tests added)
 > **Purpose:** Full handoff summary so anyone (or their AI assistant) can understand what's built, what's tested, what's live, and what's left to do.
 
 ---
@@ -188,7 +188,49 @@ The complete dispute resolution pipeline has been executed **live on Base Sepoli
 
 **AI provider:** Amazon Nova Lite via AWS Bedrock (not Anthropic/OpenAI — existing AWS IAM credentials were already available). Uses Bedrock's `converse()` API. Model ID configurable via `.env` (`NOVA_MODEL_ID`, default `us.amazon.nova-lite-v1:0`).
 
-> **⚠️ Known quirk — harmless post-transaction error:** Every real transaction on this RPC setup (Alchemy free tier + Titanoboa) throws `TypeError: 'NoneType' object is not subscriptable` immediately **after** the transaction has already succeeded and been mined. Titanoboa tries to re-sync its internal state right after broadcasting, and the RPC hasn't indexed the latest block yet — a timing/race condition, not a real failure. Confirmed repeatedly via BaseScan that the underlying transaction always succeeded. Multi-step scripts (`fast_test_flow.py`) wrap each call in a retry-with-delay helper; simpler one-off scripts just need to be re-run if this error appears.
+> **⚠️ Known quirk — harmless post-transaction error:** Every real transaction on this RPC setup (Alchemy free tier + Titanoboa) throws `TypeError: 'NoneType' object is not subscriptable` immediately **after** the transaction has already succeeded and been mined. Titanoboa tries to re-sync its internal state right after broadcasting, and the RPC hasn't indexed the latest block yet — a timing/race condition, not a real failure. Confirmed repeatedly via BaseScan that the underlying transaction always succeeded. As of §3.6, this is now handled centrally in `scripts/chain_utils.py` rather than per-script — see below.
+
+### 3.6 Happy Path & Timeout Claim — Also Proven Live
+
+The two remaining untested live paths — approval without dispute, and automatic payout after client silence — have since been verified on-chain.
+
+**Happy path** (main contract `0xB2012dc47b963a6e5edfaadcf707aca10edbfa58`, milestone 1, 20 USDC):
+
+1. Client approved the escrow contract to spend USDC (`approve()`) — required first, standard ERC20 `transferFrom()` behavior
+2. Client funded milestone 1
+3. Freelancer submitted proof
+4. Client approved directly — **no dispute raised**
+5. **Final status: `RELEASED`** — freelancer paid instantly, no arbitration involved
+
+**`claim_after_timeout()`** (throwaway contract `0xd9B85B95b80EE0d8D27516148774368898a72423`, 60s review period instead of 7 days, deployed via `deploy_fast_timeout.py` — constructor order confirmed live as `freelancer, token, arbitrator, review_period, milestone_amounts`):
+
+1. Funded → submitted proof → **client went silent**
+2. Waited out the (shortened) review period
+3. Freelancer called `claim_after_timeout()`
+4. **Final status: `RELEASED`** — freelancer auto-paid without any client action; balance confirmed up by exactly 1.0 USDC
+
+**Combined verification matrix — every documented contract function proven live:**
+
+| Function | Verified Live |
+|---|:---:|
+| `fund_milestone()` | ✅ |
+| `submit_milestone()` | ✅ |
+| `approve_milestone()` | ✅ |
+| `claim_after_timeout()` | ✅ |
+| `raise_dispute()` | ✅ |
+| `submit_ruling()` | ✅ |
+| `appeal_ruling()` | ✅ |
+| `submit_secondary_ruling()` | ✅ |
+| `finalize_ruling()` | ✅ |
+
+**New scripts added (happy path / timeout testing):**
+
+| Script | Purpose |
+|---|---|
+| `scripts/happy_path_flow.py` | Fund → submit → approve on the main contract (no dispute) |
+| `scripts/deploy_fast_timeout.py` | Deploys a throwaway `EscrowJob.vy` instance with a 60s review period (constructor arg, no separate contract file needed) |
+| `scripts/timeout_claim_flow.py` | Fund → submit → wait out review period → `claim_after_timeout()` |
+| `scripts/chain_utils.py` | Shared exception-handling for the RPC-lag quirk — `run_tx()` for writes (catch once, never resend, since resending duplicates a real transaction), `read_view()` for reads (safe to retry with backoff, since no transaction is broadcast), `deploy_with_recovery()` for deploys (recovers the contract address from the transaction receipt via direct RPC call if the deploy call itself crashes post-broadcast) |
 
 **Contract addresses reference:**
 
@@ -223,7 +265,11 @@ escrow-system-starter/
 │   ├── fast_test_flow.py               ← full automated flow incl. finalize_ruling()
 │   ├── check_milestone.py              ← on-chain milestone state checker
 │   ├── check_usdc.py                   ← client USDC balance checker
-│   └── check_freelancer_balance.py     ← freelancer USDC balance checker
+│   ├── check_freelancer_balance.py     ← freelancer USDC balance checker
+│   ├── happy_path_flow.py              ← fund → submit → approve, no dispute (live)
+│   ├── deploy_fast_timeout.py          ← deploys throwaway 60s-review-period contract
+│   ├── timeout_claim_flow.py           ← fund → submit → wait → claim_after_timeout() (live)
+│   └── chain_utils.py                  ← shared RPC-lag exception handling (run_tx / read_view / deploy_with_recovery)
 ├── .env                      ← SECRETS, never commit (see below)
 ├── .gitignore                ← protects .env from being committed
 ├── requirements.txt
@@ -244,6 +290,7 @@ AWS_SECRET_ACCESS_KEY=...
 AWS_REGION=us-east-1
 DEPLOYED_ESCROW_ADDRESS=0xB2012dc47b963a6e5edfaadcf707aca10edbfa58
 DEPLOYED_FASTTEST_ADDRESS=0xe0BE70ef3949383157205416B2edCF8cFDd0Dc89
+DEPLOYED_TIMEOUTTEST_ADDRESS=0xd9B85B95b80EE0d8D27516148774368898a72423
 ```
 
 ---
@@ -297,8 +344,8 @@ pytest
 - Node.js/Express layer connecting frontend ↔ contract ↔ AI arbitration service
 - MongoDB for off-chain metadata (job descriptions, user profiles, etc. — anything that doesn't need to be on-chain)
 
-### 7.3 More testnet testing — mostly done ✅
-The full fund → submit → approve/dispute → AI ruling → appeal → secondary ruling → finalize flow has been proven live (§3.5). Remaining gaps: the "happy path" (client approves without disputing) and `claim_after_timeout()` (client goes silent, freelancer auto-paid after the review period) haven't been specifically exercised live yet — though both are covered by the 45 local automated tests.
+### 7.3 More testnet testing — complete ✅
+The full fund → submit → approve/dispute → AI ruling → appeal → secondary ruling → finalize flow was proven live (§3.5). The happy path (client approves without disputing) and `claim_after_timeout()` (client goes silent, freelancer auto-paid) have since also been exercised live and confirmed (§3.6). **Every documented contract function is now verified on Base Sepolia — no remaining live-testing gaps.**
 
 ### 7.4 Eventually: Mainnet deployment 🚧
 - Real money, real USDC, real gas fees — a much later step after thorough testing and possibly a security audit
