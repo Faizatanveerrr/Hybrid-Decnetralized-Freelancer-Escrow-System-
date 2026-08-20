@@ -1,23 +1,4 @@
-"""
-AI-assisted dispute arbitration using Amazon Nova Lite (via AWS Bedrock).
 
-Usage:
-    python scripts/ai_arbitrate.py <milestone_id> "<acceptance_criteria>"
-
-Example:
-    python scripts/ai_arbitrate.py 0 "Deliverable must include a working login page with email/password auth"
-
-What this does:
-    1. Connects to the deployed EscrowJob contract on Base Sepolia
-    2. Reads the disputed milestone's submitted proof_uri (IPFS link)
-    3. Fetches the actual proof content from IPFS
-    4. Asks Amazon Nova Lite to rule on the dispute given the criteria + evidence
-    5. Uploads the AI's full reasoning to IPFS (for transparency/auditability)
-    6. Submits the ruling on-chain via submit_ruling()
-
-NOTE: This calls submit_ruling(), which only works on a milestone that is
-      currently in the DISPUTED state with no ruling submitted yet.
-"""
 import os
 import sys
 import json
