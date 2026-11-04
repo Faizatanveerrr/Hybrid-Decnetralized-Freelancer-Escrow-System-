@@ -1,0 +1,34 @@
+# One command starts everything:   docker compose up --build
+# Then open http://localhost:5000
+services:
+  mongo:
+    image: mongo:7
+    restart: unless-stopped
+    volumes:
+      - mongo-data:/data/db
+    healthcheck:
+      test: ["CMD", "mongosh", "--quiet", "--eval", "db.adminCommand('ping').ok"]
+      interval: 5s
+      timeout: 5s
+      retries: 12
+    # No published port on purpose: it cannot clash with another MongoDB on your PC.
+
+  app:
+    build: .
+    restart: unless-stopped
+    ports:
+      - "5000:5000"
+    env_file:
+      - path: .env
+        required: false
+    environment:
+      # Always use the bundled database, even if .env points somewhere else (e.g. Atlas).
+      # To use Atlas instead, delete this line.
+      MONGODB_URI: mongodb://mongo:27017/escrowx
+      PORT: "5000"
+    depends_on:
+      mongo:
+        condition: service_healthy
+
+volumes:
+  mongo-data:

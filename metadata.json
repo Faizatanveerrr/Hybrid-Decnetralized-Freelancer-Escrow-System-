@@ -1,0 +1,6 @@
+{
+  "name": "EscrowX – Decentralized Freelancer Escrow System",
+  "description": "A decentralized escrow platform for secure freelance payments, milestone-based work, and AI-assisted dispute resolution.",
+  "requestFramePermissions": [],
+  "majorCapabilities": ["MAJOR_CAPABILITY_SERVER_SIDE_GEMINI_API"]
+}
