@@ -5,6 +5,8 @@ const paymentSchema = new mongoose.Schema({
   user: { type: mongoose.Schema.Types.ObjectId, ref: 'User', required: true, index: true },
   wallet: { type: String, required: true },              // address that receives the tokens
   orderId: { type: String, required: true, unique: true }, // Razorpay order id
+  // 'demo' payments come from the built-in demo checkout (no gateway, no real money)
+  mode: { type: String, enum: ['razorpay', 'demo'], default: 'razorpay' },
   paymentId: { type: String, default: '' },               // Razorpay payment id (after payment)
   amount: { type: Number, required: true },               // rupees
   status: {

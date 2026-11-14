@@ -52,6 +52,15 @@ One-time setup:
 3. `npm run deploy:token` - deploys MockINR and saves `TOKEN_ADDRESS` to `.env`.
 4. Restart `npm run dev`.
 
+### Client mode / Freelancer mode
+
+The mode switch in Settings is a workspace preference and is saved on your account
+(it decides, for example, whether you can send proposals). **What you may do on a
+specific project depends on your real relationship to it**: if you created it you are
+its client, if you were hired on it you are its freelancer, in either mode. The mode
+only applies where you are not a party yet (browsing open projects). One account
+cannot be both client and freelancer of the same project.
+
 ### Wallets: managed by default, MetaMask optional
 
 Every new account automatically gets a **platform-managed wallet**: the server
@@ -77,6 +86,15 @@ Using it (with MetaMask instead of managed wallets, client and freelancer must u
    raise dispute, appeal, finalize. The AI ruling is signed on-chain by the
    arbitrator wallet.
 
+### No Razorpay account? Use the demo checkout
+
+If no Razorpay keys are set (Razorpay's signup asks for a PAN before it shows keys),
+**Add money** opens a clearly labelled **demo checkout** and credits the tokens
+without any payment. Everything after that (escrow, disputes, IPFS, withdrawals)
+is identical. Adding real keys switches to the real Razorpay checkout automatically.
+Safety rules: demo mode is refused when live-money payouts are configured, and a demo
+order can never complete a real Razorpay payment. `PAYMENT_MODE=off` disables top-ups.
+
 ### Pay with UPI / Paytm (rupees in, INR tokens out)
 
 Optional. Users can add money with UPI (Paytm, PhonePe, GPay...), cards or net
@@ -95,6 +113,30 @@ In test mode no real money moves: choose UPI and enter `success@razorpay`.
 Going live needs a verified Razorpay business account (KYC) and legal review -
 the platform would hold customers' rupees, which is regulated in India. A payout
 to the freelancer's bank account is not implemented.
+
+### Files on IPFS
+
+Deliverables, dispute evidence, the agreed job terms and the AI arbitrator's
+rulings are stored on **IPFS** (content-addressed storage). The file's hash (CID)
+is what the smart contract records, so nobody can swap a file afterwards:
+
+| What | Stored | Hash recorded |
+|---|---|---|
+| Job terms (title, milestones, criteria) | on deploy | `spec_uri` in the contract |
+| Deliverable file | when the freelancer submits | `proof_uri` of the milestone |
+| Dispute claim / evidence | when a dispute is raised or evidence added | `evidence_uri` / on the dispute |
+| AI ruling (winner, confidence, full reasoning, evidence hashes) | on every ruling | `ruling_uri` in the contract |
+
+**Privacy:** anything on IPFS is readable by whoever knows its hash, so every file
+is encrypted (AES-256-GCM) *before* upload. The hash proves integrity without
+exposing the content; the app decrypts a file only for that project's client and
+freelancer. If `WALLET_ENCRYPTION_KEY` (or `IPFS_ENCRYPTION_KEY`) is lost, stored files
+cannot be read again.
+
+Providers (`IPFS_PROVIDER`): `kubo` (an IPFS node - `docker compose up` starts one),
+`pinata` (hosted, set `PINATA_JWT`), `local` (default without either: stored in
+MongoDB, labelled `escrowx-local://` because it is NOT on the IPFS network), `none`.
+Files are limited to `IPFS_MAX_MB` (default 10).
 
 ### Withdraw to a UPI ID (rupees out)
 
@@ -141,6 +183,8 @@ npm test                    # contract tests
 npm run e2e:local           # optional: JS on-chain flow against a local node
 ```
 
+Optional IPFS tests (need an IPFS node, e.g. `ipfs daemon`, plus the services below): `IPFS_API_URL=http://127.0.0.1:5001 npm run test:ipfs`.
+
 Optional full-stack tests (real backend + database + local chain, fake payment gateway):
 start `npx hardhat node` (or `anvil`) and a MongoDB, then `npm run test:integration`.
 Each run creates a throwaway database named `escrowx_it_<timestamp>`; drop it afterwards.
@@ -160,6 +204,7 @@ Each run creates a throwaway database named `escrowx_it_<timestamp>`; drop it af
 - Login uses signed 7-day tokens kept in the browser's localStorage; a production app should use httpOnly cookies, password reset and rate limiting.
 - Managed-wallet keys live in the database encrypted with one server key. A production system would use a KMS/HSM.
 - `backend/services/blockchainService.js` is only used by projects that have not deployed an on-chain escrow (legacy mode); those have no `txHash`.
+- IPFS files are pinned only on your own node (or your Pinata account); if that node is lost, the files are gone, but their hashes remain on-chain. Back up the IPFS volume.
 - Payouts are checked by polling the gateway when the wallet page loads; a production system should also handle the gateway's webhooks.
 - The arbitrator is a single platform-controlled key; a production system would use a multisig or oracle network.
 - MockINR is a test token. Moving real INR needs a licensed provider and compliance work.

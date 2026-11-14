@@ -11,7 +11,7 @@ const boot = async (env = {}) => {
   const be = await startBackend({ TOKEN_ADDRESS: token, ...env });
   const api = makeApi(be.port);
   const newUser = async (name, topUp = 0) => {
-    const r = await api('POST', '/auth/register', { body: { name: `${name}${++n}`, email: `${name}${n}@t.io`, password: 'secret12', role: 'freelancer' } });
+    const r = await api('POST', '/auth/register', { body: { name: `${name}${++n}`, email: `${name}${n}@t.io`, password: 'Secret#12x', role: 'freelancer' } });
     const u = { ...r.data.user, token: r.data.token };
     if (topUp) {
       const o = await api('POST', '/payments/order', { token: u.token, body: { amount: topUp } });

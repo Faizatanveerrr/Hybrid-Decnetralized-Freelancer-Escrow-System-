@@ -8,6 +8,9 @@ import { releasePayment } from '../services/blockchainService.js';
 import { requireUser, projectRole } from '../middleware/authHelper.js';
 import * as chainSvc from '../services/chainService.js';
 import { syncProjectCompletion } from '../services/projectService.js';
+import IpfsObject from '../models/IpfsObject.js';
+import { isIpfsEnabled, isValidCid, storeJson, buildRulingRecord, readDecrypted } from '../services/ipfsService.js';
+import { inspectDeliverable } from '../services/sandboxService.js';
 
 // Mirrors CONFIDENCE_THRESHOLD in contracts/EscrowX.vy
 const CONFIDENCE_THRESHOLD = 70;
@@ -168,16 +171,26 @@ export const addEvidence = async (req, res) => {
     const ctx = await loadDispute(req, res);
     if (!ctx) return;
     const { dispute, role, user } = ctx;
-    const { name, description } = req.body;
+    const { name, description, cid } = req.body;
 
     if (dispute.status !== 'ACTIVE' && dispute.status !== 'EVIDENCE_RECEIVED') {
       return fail(res, 409, 'Evidence can only be added before the AI ruling is rendered.');
     }
 
+    // Optional file on IPFS: must be this user's own evidence upload for this project.
+    let fileObject = null;
+    if (cid) {
+      fileObject = isValidCid(cid) ? await IpfsObject.findOne({ cid, kind: 'evidence' }) : null;
+      if (!fileObject || String(fileObject.projectId) !== String(dispute.projectId) || String(fileObject.uploadedBy) !== String(user._id)) {
+        return fail(res, 400, 'That file was not uploaded by you for this project.');
+      }
+    }
+
     dispute.evidence.push({
       submittedBy: role,
-      name: name || 'evidence_file.pdf',
+      name: fileObject ? fileObject.name : (name || 'evidence_file.pdf'),
       description: description || 'Evidence documentation',
+      cid: fileObject ? fileObject.cid : '',
       date: new Date()
     });
     // Fill in the caller's own claim if they have not stated one yet.
@@ -218,20 +231,58 @@ export const runAIRuling = async (req, res) => {
     const milestone = await Milestone.findById(dispute.milestoneId);
     const appealReason = isSecondary ? (dispute.aiReasoning.split('[Appeal Logged').slice(1).join('[Appeal Logged') || '') : '';
 
+    // Escalated review (appeal or low-confidence first ruling): run the freelancer's whole
+    // deliverable in the sandbox and give the arbitrator the real results.
+    // AI_RUN_PROJECT: escalation (default) | always | off
+    const runMode = String(process.env.AI_RUN_PROJECT || 'escalation').toLowerCase();
+    let executionReport = null;
+    if (runMode === 'always' || (runMode === 'escalation' && isSecondary)) {
+      if (milestone?.proofCid && isIpfsEnabled()) {
+        try {
+          const bytes = await readDecrypted(milestone.proofCid);
+          executionReport = await inspectDeliverable({ buffer: bytes, name: milestone.proofName || 'deliverable' });
+        } catch (err) {
+          executionReport = { status: 'unavailable', reason: `Deliverable could not be loaded: ${String(err.message).slice(0, 120)}`, summary: `Deliverable could not be loaded: ${String(err.message).slice(0, 120)}`, steps: [], probes: [] };
+        }
+      } else if (runMode !== 'off') {
+        executionReport = { status: 'skipped', reason: 'No deliverable file is stored for this milestone, so there was nothing to run.', summary: 'No deliverable file is stored for this milestone, so there was nothing to run.', steps: [], probes: [] };
+      }
+    }
+
     const aiResult = await analyzeDispute({
+      executionReport,
       projectTitle: project?.title || dispute.projectTitle,
       projectDescription: project?.description || '',
       milestoneTitle: milestone?.title || dispute.milestoneTitle,
       milestoneDescription: milestone?.description || '',
       acceptanceCriteria: dispute.acceptanceCriteria || milestone?.acceptanceCriteria || 'Acceptance criteria verification',
-      clientClaim: dispute.clientClaim || 'Deliverables did not meet specification.',
-      freelancerClaim: dispute.freelancerClaim || 'Delivered work according to scope.',
+      amount: dispute.amount,
+      milestoneProof: milestone?.proof || '',
+      proofName: milestone?.proofName || '',
+      clientClaim: dispute.clientClaim || '',
+      freelancerClaim: dispute.freelancerClaim || '',
       evidence: dispute.evidence || [],
       priorRuling: isSecondary
         ? { winner: dispute.aiWinner, confidence: dispute.aiConfidence, reasoning: dispute.aiReasoning }
         : null,
       appealReason
     });
+
+    // Keep the full reasoning on IPFS so the on-chain ruling can be audited later.
+    // If storage is unavailable the ruling still proceeds with a plain reference.
+    let rulingCid = '';
+    let rulingUri = `dispute://${dispute._id}${isSecondary ? '/secondary' : ''}`;
+    if (isIpfsEnabled()) {
+      try {
+        const stored = await storeJson(buildRulingRecord(dispute, aiResult, isSecondary ? 'secondary' : 'primary'), {
+          projectId: dispute.projectId, uploadedBy: ctx.user._id, kind: 'ruling', name: `ruling-${isSecondary ? 'secondary' : 'primary'}.json`
+        });
+        rulingCid = stored.cid;
+        rulingUri = stored.uri;
+      } catch (err) {
+        console.warn('Could not store ruling on IPFS:', err.message);
+      }
+    }
 
     // On-chain projects: the platform arbitrator wallet records the ruling in the contract.
     let rulingTxHash = '';
@@ -241,8 +292,7 @@ export const runAIRuling = async (req, res) => {
       const winnerAddress = aiResult.winner === 'client' ? project.clientWallet : project.freelancerWallet;
       try {
         const tx = await chainSvc.submitRulingOnChain(
-          project.escrowAddress, idx, winnerAddress, aiResult.confidence,
-          `dispute://${dispute._id}${isSecondary ? '/secondary' : ''}`, isSecondary
+          project.escrowAddress, idx, winnerAddress, aiResult.confidence, rulingUri, isSecondary
         );
         rulingTxHash = tx.txHash;
         if (isPrimary && aiResult.confidence >= CONFIDENCE_THRESHOLD) {
@@ -259,6 +309,7 @@ export const runAIRuling = async (req, res) => {
       dispute.aiWinner = aiResult.winner;
       dispute.aiConfidence = aiResult.confidence;
       dispute.aiReasoning = aiResult.reasoning;
+      dispute.rulingCid = rulingCid;
       if (aiResult.confidence >= CONFIDENCE_THRESHOLD) {
         dispute.appealPeriodExpires = chainAppealDeadline || new Date(Date.now() + APPEAL_WINDOW_HOURS * 3600000);
         dispute.needsSecondaryReview = false;
@@ -267,9 +318,14 @@ export const runAIRuling = async (req, res) => {
         dispute.needsSecondaryReview = true;
       }
     } else {
+      if (executionReport) {
+        dispute.executionStatus = executionReport.status;
+        dispute.executionSummary = String(executionReport.summary || '').slice(0, 600);
+      }
       dispute.secondaryWinner = aiResult.winner;
       dispute.secondaryConfidence = aiResult.confidence;
       dispute.secondaryReasoning = aiResult.reasoning;
+      dispute.secondaryRulingCid = rulingCid;
     }
     await dispute.save();
 

@@ -13,6 +13,19 @@ services:
       retries: 12
     # No published port on purpose: it cannot clash with another MongoDB on your PC.
 
+  # IPFS node (Kubo): stores the encrypted deliverables, evidence, job specs and AI rulings.
+  # Not published on your PC's ports; only the app container can talk to it.
+  ipfs:
+    image: ipfs/kubo:release
+    restart: unless-stopped
+    volumes:
+      - ipfs-data:/data/ipfs
+    healthcheck:
+      test: ["CMD-SHELL", "wget -q -O- --post-data='' http://127.0.0.1:5001/api/v0/version >/dev/null || exit 1"]
+      interval: 10s
+      timeout: 5s
+      retries: 12
+
   app:
     build: .
     restart: unless-stopped
@@ -26,9 +39,15 @@ services:
       # To use Atlas instead, delete this line.
       MONGODB_URI: mongodb://mongo:27017/escrowx
       PORT: "5000"
+      # Store files on the bundled IPFS node (delete these two lines to use Pinata or the demo store).
+      IPFS_PROVIDER: kubo
+      IPFS_API_URL: http://ipfs:5001
     depends_on:
       mongo:
         condition: service_healthy
+      ipfs:
+        condition: service_started   # uploads fail gracefully until the node is ready
 
 volumes:
   mongo-data:
+  ipfs-data:

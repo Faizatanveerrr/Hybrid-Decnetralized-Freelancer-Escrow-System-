@@ -32,9 +32,15 @@ export const updateUser = async (req, res) => {
 
     // Only defined fields are applied, so a partial update cannot wipe others.
     const patch = {};
-    for (const [k, v] of Object.entries({ name: req.body.name, bio: req.body.bio, skills: req.body.skills, walletAddress: req.body.walletAddress, links: req.body.links, avatar: req.body.avatar, upiId: req.body.upiId })) {
+    for (const [k, v] of Object.entries({ name: req.body.name, bio: req.body.bio, skills: req.body.skills, walletAddress: req.body.walletAddress, links: req.body.links, avatar: req.body.avatar, upiId: req.body.upiId, role: req.body.role })) {
       if (v !== undefined) patch[k] = v;
     }
+    // The active mode ("client" / "freelancer"). Per-project permissions still depend on the
+    // project's actual client and freelancer; this only gates things like sending proposals.
+    if (patch.role !== undefined && !['client', 'freelancer'].includes(patch.role)) {
+      return res.status(400).json({ success: false, message: "Role must be 'client' or 'freelancer'." });
+    }
+
     // Escrow contracts are bound to wallet addresses, so changing wallet is blocked mid-project.
     if (patch.walletAddress !== undefined && patch.walletAddress !== authUser.walletAddress) {
       if (await hasActiveEscrow(authUser._id)) {

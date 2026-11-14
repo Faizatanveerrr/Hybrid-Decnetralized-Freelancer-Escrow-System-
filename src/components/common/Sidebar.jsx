@@ -1,4 +1,4 @@
-import React from 'react';
+import React, { useEffect, useState } from 'react';
 import { NavLink, useNavigate } from 'react-router-dom';
 import {
   LayoutDashboard,
@@ -18,11 +18,25 @@ import {
   X
 } from 'lucide-react';
 import { useAuth } from '../../context/AuthContext.jsx';
+import { getUnreadCountApi } from '../../services/api.js';
 import { shortenAddress } from '../../services/blockchain.js';
 
 export default function Sidebar({ isOpen, onClose }) {
   const { user, role, logout } = useAuth();
   const navigate = useNavigate();
+  const [unread, setUnread] = useState(0);
+
+  // Unread project messages for the Messages badge (refreshes every 30s while logged in).
+  useEffect(() => {
+    if (!user) { setUnread(0); return undefined; }
+    let alive = true;
+    const load = () => getUnreadCountApi().then((r) => { if (alive) setUnread(r.data?.totalUnread || 0); }).catch(() => {});
+    load();
+    const t = setInterval(load, 30000);
+    return () => { alive = false; clearInterval(t); };
+  }, [user]);
+
+  const messagesBadge = unread > 0 ? { badge: unread > 99 ? '99+' : String(unread), badgeTone: 'alert' } : {};
 
   const isClient = role === 'client';
 
@@ -33,7 +47,7 @@ export default function Sidebar({ isOpen, onClose }) {
         { label: 'Freelancers', path: '/freelancers', icon: Users },
         { label: 'Milestones', path: '/milestones', icon: ListTodo },
         { label: 'Disputes', path: '/disputes', icon: Scale, badge: 'AI' },
-        { label: 'Messages', path: '/messages', icon: MessageSquare },
+        { label: 'Messages', path: '/messages', icon: MessageSquare, ...messagesBadge },
         { label: 'Wallet', path: '/wallet', icon: Wallet },
         { label: 'Profile', path: '/profile', icon: UserCheck },
         { label: 'Settings', path: '/settings', icon: Settings },
@@ -45,7 +59,7 @@ export default function Sidebar({ isOpen, onClose }) {
         { label: 'Invitations', path: '/invitations', icon: MailCheck },
         { label: 'Milestones', path: '/milestones', icon: ListTodo },
         { label: 'Disputes', path: '/disputes', icon: Scale, badge: 'AI' },
-        { label: 'Messages', path: '/messages', icon: MessageSquare },
+        { label: 'Messages', path: '/messages', icon: MessageSquare, ...messagesBadge },
         { label: 'Wallet', path: '/wallet', icon: Wallet },
         { label: 'Profile', path: '/profile', icon: UserCheck },
         { label: 'Settings', path: '/settings', icon: Settings },
@@ -116,7 +130,7 @@ export default function Sidebar({ isOpen, onClose }) {
                   <span>{item.label}</span>
                 </div>
                 {item.badge && (
-                  <span className="text-[10px] font-bold px-1.5 py-0.5 rounded-md bg-purple-100 text-purple-700">
+                  <span className={`text-[10px] font-bold px-1.5 py-0.5 rounded-md ${item.badgeTone === 'alert' ? 'bg-rose-500 text-white' : 'bg-purple-100 text-purple-700'}`}>
                     {item.badge}
                   </span>
                 )}

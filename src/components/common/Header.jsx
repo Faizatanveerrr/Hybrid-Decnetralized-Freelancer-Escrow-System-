@@ -1,13 +1,21 @@
-import React from 'react';
+import React, { useState } from 'react';
 import { Menu, Wallet, PlusCircle, LogIn } from 'lucide-react';
 import { useAuth } from '../../context/AuthContext.jsx';
 import { useWallet } from '../../context/WalletContext.jsx';
 import { useNavigate } from 'react-router-dom';
+import Toast from './Toast.jsx';
 
 export default function Header({ onMenuClick, title = 'Dashboard' }) {
-  const { user, role } = useAuth();
+  const { user, role, switchRole, switching } = useAuth();
+  const [switchError, setSwitchError] = useState('');
   const { connected, balance, shortAddress, connectWallet } = useWallet();
   const navigate = useNavigate();
+
+  const handleSwitch = async (newRole) => {
+    if (switching || newRole === role) return;
+    const res = await switchRole(newRole);
+    if (!res.success) setSwitchError(res.message);
+  };
 
   return (
     <header className="sticky top-0 z-30 bg-white/90 backdrop-blur-md border-b border-slate-100 h-18 px-4 sm:px-8 flex items-center justify-between">
@@ -30,11 +38,28 @@ export default function Header({ onMenuClick, title = 'Dashboard' }) {
         
         {/* User Role Badge */}
         {user && (
-          <span className={`px-2.5 py-1 rounded-lg text-xs font-bold uppercase tracking-wider ${
-            role === 'client' ? 'bg-indigo-50 text-indigo-700 border border-indigo-100' : 'bg-emerald-50 text-emerald-700 border border-emerald-100'
-          }`}>
-            {role}
-          </span>
+          <div
+            className="inline-flex p-0.5 bg-slate-100 rounded-xl text-[11px] font-bold uppercase tracking-wider"
+            title="Switch between Client and Freelancer mode"
+          >
+            {['client', 'freelancer'].map((r) => (
+              <button
+                key={r}
+                type="button"
+                disabled={switching}
+                onClick={() => handleSwitch(r)}
+                className={`px-2.5 py-1 rounded-lg transition-all cursor-pointer disabled:opacity-60 disabled:cursor-wait ${
+                  role === r
+                    ? r === 'client'
+                      ? 'bg-white text-indigo-700 shadow-xs'
+                      : 'bg-white text-emerald-700 shadow-xs'
+                    : 'text-slate-500 hover:text-slate-800'
+                }`}
+              >
+                {r}
+              </button>
+            ))}
+          </div>
         )}
 
         {/* Wallet Status Badge */}
@@ -97,6 +122,7 @@ export default function Header({ onMenuClick, title = 'Dashboard' }) {
         )}
 
       </div>
+      {switchError && <Toast type="error" message={switchError} onClose={() => setSwitchError('')} />}
     </header>
   );
 }

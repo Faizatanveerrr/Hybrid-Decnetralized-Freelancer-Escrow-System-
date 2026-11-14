@@ -10,6 +10,8 @@ import {
 import { requireUser, projectRole } from '../middleware/authHelper.js';
 import * as chainSvc from '../services/chainService.js';
 import { syncProjectCompletion } from '../services/projectService.js';
+import IpfsObject from '../models/IpfsObject.js';
+import { isValidCid, uriFor, cidFromUri } from '../services/ipfsService.js';
 
 const REVIEW_PERIOD_HOURS = 72;
 
@@ -191,15 +193,30 @@ export const submitWork = async (req, res) => {
     if (!ctx) return;
     const { milestone, project } = ctx;
 
-    const { proof } = req.body;
+    const { proof, proofCid } = req.body;
     const now = new Date();
+
+    // Optional deliverable file on IPFS: it must be the freelancer's own upload for this project.
+    let fileObject = null;
+    if (proofCid) {
+      fileObject = isValidCid(proofCid) ? await IpfsObject.findOne({ cid: proofCid, kind: 'deliverable' }) : null;
+      if (!fileObject || String(fileObject.projectId) !== String(project._id) || String(fileObject.uploadedBy) !== String(ctx.user._id)) {
+        return fail(res, 400, 'That file was not uploaded by you for this project.');
+      }
+    }
 
     const chainState = project.escrowAddress ? await chainCheck(req, res, project, milestone, ['SUBMITTED']) : null;
     if (project.escrowAddress && !chainState) return;
+    // The hash the freelancer signed on-chain must be the file we store: this ties the DB record to the blockchain.
+    if (chainState && fileObject && cidFromUri(chainState.proofUri) !== fileObject.cid) {
+      return fail(res, 409, 'The file hash recorded on-chain does not match the uploaded file.');
+    }
 
     const updated = await transition(milestone, ['FUNDED'], {
       status: 'SUBMITTED',
-      proof: typeof proof === 'string' && proof.trim() ? proof.trim() : 'Deliverables submitted for review.',
+      proof: typeof proof === 'string' && proof.trim() ? proof.trim() : (fileObject ? `Deliverable file: ${fileObject.name}` : 'Deliverables submitted for review.'),
+      proofCid: fileObject ? fileObject.cid : '',
+      proofName: fileObject ? fileObject.name : '',
       submittedAt: now,
       // On-chain projects use the contract's own review deadline.
       autoReleaseDeadline: chainState

@@ -5,6 +5,7 @@
 import { BrowserProvider } from 'ethers';
 import * as core from '../../shared/chainCore.js';
 import { getChainConfigApi, chainTxApi } from './api.js';
+import { loadIpfsConfig, prepareSpecUri } from './ipfs.js';
 
 let configPromise = null;
 
@@ -87,13 +88,16 @@ export const onchain = {
   async deployEscrow(project, user) {
     if (isManaged(user)) return viaServer('deploy', { projectId: project._id });
     const { signer, config } = await getSigner(user.walletAddress);
+    // Agreed terms go to IPFS; their hash is fixed inside the contract.
+    const ipfs = await loadIpfsConfig();
+    const specUri = (ipfs.enabled && (await prepareSpecUri(project._id))) || `escrowx://project/${project._id}`;
     const result = await core.deployEscrow(signer, {
       freelancer: project.freelancerWallet,
       arbitrator: config.arbitratorAddress,
       token: config.tokenAddress,
       reviewPeriod: config.reviewPeriod,
       appealWindow: config.appealWindow,
-      specUri: `escrowx://project/${project._id}`,
+      specUri,
       milestones: (project.milestones || []).map((m) => ({ amount: m.amount }))
     });
     return result;

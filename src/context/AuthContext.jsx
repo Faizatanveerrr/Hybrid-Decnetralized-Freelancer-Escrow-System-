@@ -1,5 +1,5 @@
 import React, { createContext, useContext, useState, useEffect } from 'react';
-import { loginApi, registerApi } from '../services/api.js';
+import { loginApi, registerApi, updateUserApi } from '../services/api.js';
 
 const AuthContext = createContext(null);
 
@@ -32,6 +32,7 @@ export const AuthProvider = ({ children }) => {
 
   const [role, setRole] = useState(() => user?.role || 'client');
   const [loading, setLoading] = useState(false);
+  const [switching, setSwitching] = useState(false);
 
   useEffect(() => {
     if (user) {
@@ -42,11 +43,36 @@ export const AuthProvider = ({ children }) => {
     }
   }, [user]);
 
-  const switchRole = (newRole) => {
-    if (!user) return;
-    const updated = { ...user, role: newRole };
-    setUser(updated);
-    setRole(newRole);
+  // Saved on the server too: the backend checks the account's role for things like
+  // sending proposals, so a browser-only switch left the screen and the server disagreeing.
+  const switchRole = async (newRole) => {
+    if (!user || newRole === role) return { success: true };
+    if (switching) return { success: false, message: 'Already switching, please wait.' };
+    setSwitching(true);
+    try {
+      const res = await updateUserApi(user._id || user.id, { role: newRole });
+      const saved = res.data?.user?.role;
+      // An outdated backend ignores the role field and answers "success" with the OLD role.
+      if (saved !== newRole) {
+        return {
+          success: false,
+          message: 'The server did not save the new role. Restart the backend (stop and run `npm run dev` again) so it loads the latest code, then try again.'
+        };
+      }
+      setUser((prev) => (prev ? { ...prev, role: saved } : prev));
+      setRole(saved);
+      return { success: true };
+    } catch (err) {
+      if (!err.response) {
+        return { success: false, message: 'Cannot reach the server. Make sure the backend is running, then try again.' };
+      }
+      return {
+        success: false,
+        message: err.response?.data?.message || `Could not switch role (server error ${err.response.status}). Please try again.`
+      };
+    } finally {
+      setSwitching(false);
+    }
   };
 
   const updateUser = (patch) => {
@@ -100,6 +126,7 @@ export const AuthProvider = ({ children }) => {
         user,
         role,
         loading,
+        switching,
         setUser,
         updateUser,
         switchRole,

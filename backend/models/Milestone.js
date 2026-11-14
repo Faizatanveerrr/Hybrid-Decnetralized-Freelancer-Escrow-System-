@@ -40,6 +40,9 @@ const milestoneSchema = new mongoose.Schema({
     type: String, 
     default: '' 
   },
+  // Deliverable file stored (encrypted) on IPFS; its CID is also recorded on-chain
+  proofCid: { type: String, default: '' },
+  proofName: { type: String, default: '' },
   autoReleaseDeadline: { 
     type: Date 
   },

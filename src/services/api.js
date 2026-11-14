@@ -73,6 +73,17 @@ export const finalizeRulingApi = (id, data = {}) => api.post(`/disputes/${id}/fi
 export const chainTxApi = (data) => api.post('/chain/tx', data);
 export const useManagedWalletApi = () => api.post('/wallet/use-managed');
 
+// Files on IPFS (encrypted)
+export const getIpfsConfigApi = () => api.get('/ipfs/config');
+export const uploadIpfsApi = (projectId, kind, file) =>
+  api.post('/ipfs/upload', file, {
+    params: { projectId, kind, name: file.name, type: file.type || 'application/octet-stream' },
+    headers: { 'Content-Type': 'application/octet-stream' },
+    transformRequest: [(data) => data]
+  });
+export const downloadIpfsApi = (cid) => api.get(`/ipfs/file/${cid}`, { responseType: 'blob' });
+export const prepareSpecApi = (projectId) => api.post('/ipfs/spec', { projectId });
+
 // Withdrawals: INR tokens -> rupees to a UPI ID
 export const getPayoutConfigApi = () => api.get('/payouts/config');
 export const validatePayoutApi = (data) => api.post('/payouts/validate', data);
@@ -90,8 +101,12 @@ export const getChainConfigApi = () => api.get('/chain/config');
 export const registerEscrowApi = (projectId, data) => api.post(`/projects/${projectId}/escrow`, data);
 
 // Message APIs
-export const getMessagesApi = (projectId) => api.get(`/messages/${projectId}`);
-export const sendMessageApi = (projectId, data) => api.post(`/messages/${projectId}`, data);
+export const getConversationsApi = () => api.get('/messages');
+export const getUnreadCountApi = () => api.get('/messages/unread');
+// params: { after, before, limit, peek }
+export const getMessagesApi = (projectId, params = {}) => api.get(`/messages/${projectId}`, { params });
+// Only the text is sent: who you are comes from your login, never from the request.
+export const sendMessageApi = (projectId, data) => api.post(`/messages/${projectId}`, { text: data.text });
 
 // Wallet APIs
 export const getWalletInfoApi = (userId) => api.get(`/wallet/${userId}`);

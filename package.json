@@ -18,9 +18,12 @@
     "e2e:local": "node scripts/e2e-local.mjs",
     "compile:contracts": "vyper contracts/EscrowX.vy contracts/MockINR.vy",
     "token:lock-faucet": "node scripts/disable-faucet.mjs",
-    "test:integration": "node tests/integration/part1.mjs && node tests/integration/part2.mjs",
+    "test:integration": "node tests/integration/part1.mjs && node tests/integration/part2.mjs && node tests/integration/part4.mjs && node tests/integration/part5.mjs",
     "docker:up": "docker compose up --build",
-    "docker:down": "docker compose down"
+    "docker:down": "docker compose down",
+    "test:messages": "node tests/integration/messages-unit.mjs",
+    "test:sandbox": "node tests/integration/sandbox-unit.mjs",
+    "test:ipfs": "node tests/integration/ipfs-unit.mjs && node tests/integration/part3.mjs"
   },
   "dependencies": {
     "@google/genai": "^2.4.0",

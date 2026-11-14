@@ -19,6 +19,7 @@ export const WalletProvider = ({ children }) => {
   const [chainEnabled, setChainEnabled] = useState(false);
   const [faucetLoading, setFaucetLoading] = useState(false);
   const [paymentsEnabled, setPaymentsEnabled] = useState(false);
+  const [paymentMode, setPaymentMode] = useState('off');
   const [topUpLoading, setTopUpLoading] = useState(false);
   const [managedAvailable, setManagedAvailable] = useState(false);
   const [payoutConfig, setPayoutConfig] = useState({ enabled: false });
@@ -27,7 +28,10 @@ export const WalletProvider = ({ children }) => {
 
   useEffect(() => {
     loadChainConfig().then((c) => setChainEnabled(Boolean(c.enabled)));
-    loadPaymentConfig().then((c) => setPaymentsEnabled(Boolean(c.enabled)));
+    loadPaymentConfig().then((c) => {
+      setPaymentsEnabled(Boolean(c.enabled));
+      setPaymentMode(c.mode || 'off');
+    });
     if (user) getPayoutConfigApi().then((r) => setPayoutConfig(r.data.config || { enabled: false })).catch(() => {});
   }, []);
 
@@ -217,6 +221,7 @@ export const WalletProvider = ({ children }) => {
         withdrawLoading,
         withdraw,
         paymentsEnabled,
+        paymentMode,
         topUpLoading,
         topUp,
         disconnectWallet,
