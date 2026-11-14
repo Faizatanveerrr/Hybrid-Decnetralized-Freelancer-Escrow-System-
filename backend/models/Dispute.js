@@ -49,8 +49,12 @@ const disputeSchema = new mongoose.Schema({
     submittedBy: String,
     name: String,
     description: String,
+    cid: { type: String, default: '' },   // file stored (encrypted) on IPFS, if any
     date: { type: Date, default: Date.now }
   }],
+  // IPFS records of the AI arbitrator's reasoning (also referenced on-chain)
+  rulingCid: { type: String, default: '' },
+  secondaryRulingCid: { type: String, default: '' },
   acceptanceCriteria: { 
     type: String, 
     default: '' 
@@ -73,6 +77,9 @@ const disputeSchema = new mongoose.Schema({
     type: String, 
     default: '' 
   },
+  // Result of running the freelancer's deliverable in the sandbox during escalated review.
+  executionStatus: { type: String, default: '' },
+  executionSummary: { type: String, default: '' },
   appealPeriodExpires: { 
     type: Date 
   },

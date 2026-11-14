@@ -9,7 +9,11 @@ import { useAuth } from '../context/AuthContext.jsx';
 
 export default function SettingsPage() {
   const navigate = useNavigate();
-  const { user, role, switchRole, logout } = useAuth();
+  const { user, role, switchRole, switching, logout } = useAuth();
+  const handleSwitch = async (newRole) => {
+    const result = await switchRole(newRole);
+    if (!result.success) alert(result.message);
+  };
   const [toastMessage, setToastMessage] = useState('');
 
   const [notifications, setNotifications] = useState({
@@ -44,7 +48,8 @@ export default function SettingsPage() {
               <div className="grid grid-cols-2 gap-3 max-w-sm">
                 <button
                   type="button"
-                  onClick={() => switchRole('client')}
+                  disabled={switching}
+                  onClick={() => handleSwitch('client')}
                   className={`p-3 rounded-xl border text-xs font-bold transition-all cursor-pointer ${
                     role === 'client'
                       ? 'border-indigo-600 bg-indigo-50/50 text-indigo-700'
@@ -55,7 +60,8 @@ export default function SettingsPage() {
                 </button>
                 <button
                   type="button"
-                  onClick={() => switchRole('freelancer')}
+                  disabled={switching}
+                  onClick={() => handleSwitch('freelancer')}
                   className={`p-3 rounded-xl border text-xs font-bold transition-all cursor-pointer ${
                     role === 'freelancer'
                       ? 'border-emerald-600 bg-emerald-50/50 text-emerald-700'

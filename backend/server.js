@@ -19,6 +19,7 @@ import invitationRoutes from './routes/invitationRoutes.js';
 import chainRoutes from './routes/chainRoutes.js';
 import paymentRoutes from './routes/paymentRoutes.js';
 import payoutRoutes from './routes/payoutRoutes.js';
+import ipfsRoutes from './routes/ipfsRoutes.js';
 import { errorHandler, notFound } from './middleware/errorMiddleware.js';
 
 dotenv.config();
@@ -80,6 +81,7 @@ app.use('/api/invitations', invitationRoutes);
 app.use('/api/chain', chainRoutes);
 app.use('/api/payments', paymentRoutes);
 app.use('/api/payouts', payoutRoutes);
+app.use('/api/ipfs', ipfsRoutes);
 
 // Unknown API routes -> JSON 404
 app.use('/api', notFound);

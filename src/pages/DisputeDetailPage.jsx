@@ -34,17 +34,20 @@ import {
 } from '../services/api.js';
 import { shortenAddress } from '../services/blockchain.js';
 import { onchain, chainError, txPrompt } from '../services/chain.js';
+import { loadIpfsConfig, uploadFile, downloadFile, shortCid } from '../services/ipfs.js';
+import { roleForProject } from '../utils/roles.js';
 
 const errMsg = (err, fallback) => err?.response?.data?.message || chainError(err) || fallback;
 
 export default function DisputeDetailPage() {
   const { id } = useParams();
   const navigate = useNavigate();
-  const { user, role } = useAuth();
+  const { user, role: modeRole } = useAuth();
   const { refreshWallet } = useWallet();
 
   const [dispute, setDispute] = useState(null);
   const [project, setProject] = useState(null); // needed for on-chain settlement
+  const role = roleForProject(project, user, modeRole);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState(null);
   const [toastMessage, setToastMessage] = useState('');
@@ -55,8 +58,13 @@ export default function DisputeDetailPage() {
   const [evidenceModal, setEvidenceModal] = useState({
     isOpen: false,
     name: '',
-    description: ''
+    description: '',
+    file: null
   });
+  const [ipfsConfig, setIpfsConfig] = useState({ enabled: false });
+  useEffect(() => {
+    loadIpfsConfig().then(setIpfsConfig);
+  }, []);
 
   // Appeal modal state
   const [appealModal, setAppealModal] = useState({
@@ -110,17 +118,24 @@ export default function DisputeDetailPage() {
   // Submit Evidence
   const handleSubmitEvidence = async (e) => {
     e.preventDefault();
-    if (!evidenceModal.name || !evidenceModal.description) return;
+    if (!evidenceModal.description || (!evidenceModal.name && !evidenceModal.file)) return;
 
     try {
+      // Optional file: encrypted and stored on IPFS; the dispute keeps its hash.
+      let stored = null;
+      if (evidenceModal.file) {
+        setToastMessage('Encrypting and storing your file on IPFS...');
+        stored = await uploadFile(dispute.projectId?._id || dispute.projectId, 'evidence', evidenceModal.file);
+      }
       const res = await addEvidenceApi(id, {
         submittedBy: role,
-        name: evidenceModal.name,
-        description: evidenceModal.description
+        name: stored ? stored.name : evidenceModal.name,
+        description: evidenceModal.description,
+        ...(stored ? { cid: stored.cid } : {})
       });
       if (res.data.success) {
         setToastMessage('Evidence added to case dossier.');
-        setEvidenceModal({ isOpen: false, name: '', description: '' });
+        setEvidenceModal({ isOpen: false, name: '', description: '', file: null });
         setDispute(res.data.dispute);
       }
     } catch (err) {
@@ -318,6 +333,20 @@ export default function DisputeDetailPage() {
                       </span>
                     </div>
                     <p className="text-xs text-slate-600 leading-relaxed">{ev.description}</p>
+                    {ev.cid && (
+                      <div className="mt-2 flex flex-wrap items-center gap-2">
+                        <button
+                          type="button"
+                          onClick={() => downloadFile(ev.cid, ev.name).catch((e) => alert(e.message))}
+                          className="px-2.5 py-1 rounded-md bg-indigo-600 text-white text-[11px] font-bold hover:bg-indigo-700"
+                        >
+                          Download file
+                        </button>
+                        <span className="font-mono text-[10px] text-slate-500" title={ev.cid}>
+                          {ipfsConfig.simulated ? 'local' : 'IPFS'} · {shortCid(ev.cid)}
+                        </span>
+                      </div>
+                    )}
                     <span className="text-[10px] text-slate-400 block mt-2">
                       Timestamp: {new Date(ev.date || Date.now()).toLocaleString()}
                     </span>
@@ -379,6 +408,16 @@ export default function DisputeDetailPage() {
                     Legal & Technical Reasoning:
                   </span>
                   <p className="whitespace-pre-line text-xs">{dispute.aiReasoning}</p>
+                  {dispute.rulingCid && (
+                    <button
+                      type="button"
+                      onClick={() => downloadFile(dispute.rulingCid, 'ruling-primary.json').catch((e) => alert(e.message))}
+                      className="mt-2 inline-flex items-center gap-1 text-[11px] font-bold underline underline-offset-2 opacity-90 hover:opacity-100"
+                      title={dispute.rulingCid}
+                    >
+                      Open full ruling record ({ipfsConfig.simulated ? 'local' : 'IPFS'} · {shortCid(dispute.rulingCid)})
+                    </button>
+                  )}
                 </div>
 
                 {/* Secondary review result (overrides the primary ruling) */}
@@ -396,6 +435,16 @@ export default function DisputeDetailPage() {
                       </span>
                     </div>
                     <p className="whitespace-pre-line text-xs text-purple-100/90">{dispute.secondaryReasoning}</p>
+                  {dispute.secondaryRulingCid && (
+                    <button
+                      type="button"
+                      onClick={() => downloadFile(dispute.secondaryRulingCid, 'ruling-secondary.json').catch((e) => alert(e.message))}
+                      className="mt-2 inline-flex items-center gap-1 text-[11px] font-bold underline underline-offset-2 opacity-90 hover:opacity-100"
+                      title={dispute.secondaryRulingCid}
+                    >
+                      Open full ruling record ({ipfsConfig.simulated ? 'local' : 'IPFS'} · {shortCid(dispute.secondaryRulingCid)})
+                    </button>
+                  )}
                   </div>
                 )}
 
@@ -513,11 +562,26 @@ export default function DisputeDetailPage() {
               type="text"
               required
               placeholder="e.g. vector_path_inspection.mov"
+              required={!evidenceModal.file}
               value={evidenceModal.name}
               onChange={(e) => setEvidenceModal({ ...evidenceModal, name: e.target.value })}
               className="w-full px-3 py-2 text-xs border border-slate-200 rounded-xl focus:outline-none focus:ring-2 focus:ring-indigo-500"
             />
           </div>
+
+          {ipfsConfig.enabled && (
+            <div>
+              <label className="block text-xs font-semibold text-slate-700 mb-1">Or attach the file itself</label>
+              <input
+                type="file"
+                onChange={(e) => setEvidenceModal({ ...evidenceModal, file: e.target.files?.[0] || null })}
+                className="block w-full text-xs text-slate-600 file:mr-3 file:py-1.5 file:px-3 file:rounded-lg file:border-0 file:bg-indigo-50 file:text-indigo-700 file:font-semibold"
+              />
+              <p className="text-[11px] text-slate-500 mt-1">
+                Encrypted and stored on {ipfsConfig.simulated ? 'the server (demo mode)' : 'IPFS'}; only the client and freelancer can open it. Maximum {ipfsConfig.maxMb} MB.
+              </p>
+            </div>
+          )}
 
           <div>
             <label className="block text-xs font-semibold text-slate-700 mb-1">

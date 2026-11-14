@@ -40,8 +40,15 @@ const loadCheckoutScript = () =>
 export const startTopUp = async ({ amount, user }) => {
   const config = await loadPaymentConfig();
   if (!config.enabled) throw new Error('Payments are not enabled on this server.');
-  await loadCheckoutScript();
 
+  // Demo mode: no gateway. The server creates a demo order and credits the tokens
+  // when we confirm it (the "checkout" is the demo form on the Wallet page).
+  if (config.mode === 'demo') {
+    const demoOrder = (await createPaymentOrderApi({ amount })).data;
+    return (await verifyPaymentApi({ razorpay_order_id: demoOrder.orderId })).data;
+  }
+
+  await loadCheckoutScript();
   const orderRes = await createPaymentOrderApi({ amount });
   const order = orderRes.data;
 

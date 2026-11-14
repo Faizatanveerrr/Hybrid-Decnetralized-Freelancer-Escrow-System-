@@ -13,13 +13,35 @@ const creds = () => ({
   keySecret: process.env.RAZORPAY_KEY_SECRET || ''
 });
 
-export const isPaymentsEnabled = () => {
+import { isLivePayouts } from './payoutService.js';
+
+/** True when real Razorpay keys are configured. */
+export const hasRazorpayKeys = () => {
   const { keyId, keySecret } = creds();
   return Boolean(keyId && keySecret);
 };
 
+/**
+ * How top-ups work (PAYMENT_MODE = razorpay | demo | off; automatic if unset):
+ *   razorpay - real checkout (UPI / Paytm / cards) through Razorpay
+ *   demo     - a built-in checkout that credits tokens WITHOUT any payment. For demos only.
+ *   off      - no top-ups
+ * Demo mode is never available next to live-money payouts.
+ */
+export const getPaymentMode = () => {
+  const explicit = (process.env.PAYMENT_MODE || '').toLowerCase();
+  if (explicit === 'off') return 'off';
+  if (explicit === 'razorpay') return hasRazorpayKeys() ? 'razorpay' : 'off';
+  if (explicit === 'demo') return isLivePayouts() ? 'off' : 'demo';
+  if (hasRazorpayKeys()) return 'razorpay';
+  return isLivePayouts() ? 'off' : 'demo';
+};
+
+export const isPaymentsEnabled = () => getPaymentMode() !== 'off';
+
 export const getPublicPaymentConfig = () => ({
   enabled: isPaymentsEnabled(),
+  mode: getPaymentMode(),
   keyId: creds().keyId,
   maxTopUp: Number(process.env.MAX_TOPUP_INR || 50000),
   testMode: creds().keyId.startsWith('rzp_test_')

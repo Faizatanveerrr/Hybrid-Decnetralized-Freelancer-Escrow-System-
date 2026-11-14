@@ -1,8 +1,9 @@
 import Payment from '../models/Payment.js';
 import { requireUser } from '../middleware/authHelper.js';
 import { isChainEnabled, mintInr, dripGasIfNeeded, assertMinterIsOwner, friendlyChainError } from '../services/chainService.js';
+import crypto from 'crypto';
 import {
-  isPaymentsEnabled, getPublicPaymentConfig, createOrder, fetchOrder, verifySignature
+  isPaymentsEnabled, getPaymentMode, hasRazorpayKeys, getPublicPaymentConfig, createOrder, fetchOrder, verifySignature
 } from '../services/paymentService.js';
 
 const fail = (res, code, message) => res.status(code).json({ success: false, message });
@@ -37,9 +38,13 @@ export const createPaymentOrder = async (req, res) => {
       return fail(res, 503, err.message);
     }
 
-    const order = await createOrder(amount, `escrowx_${String(user._id).slice(-8)}_${Date.now()}`);
-    await Payment.create({ user: user._id, wallet: user.walletAddress, orderId: order.id, amount });
-    res.status(201).json({ success: true, orderId: order.id, amount, amountPaise: order.amount, currency: order.currency });
+    // Demo mode skips the gateway entirely: the order exists only in our database.
+    const mode = getPaymentMode();
+    const order = mode === 'demo'
+      ? { id: `demo_order_${crypto.randomUUID()}`, amount: Math.round(amount * 100), currency: 'INR' }
+      : await createOrder(amount, `escrowx_${String(user._id).slice(-8)}_${Date.now()}`);
+    await Payment.create({ user: user._id, wallet: user.walletAddress, orderId: order.id, amount, mode });
+    res.status(201).json({ success: true, mode, orderId: order.id, amount, amountPaise: order.amount, currency: order.currency });
   } catch (error) {
     res.status(502).json({ success: false, message: error.message });
   }
@@ -97,13 +102,22 @@ export const verifyPayment = async (req, res) => {
     const user = await requireUser(req, res);
     if (!user) return;
 
-    const { razorpay_order_id: orderId, razorpay_payment_id: paymentId, razorpay_signature: signature } = req.body;
-    if (!verifySignature(orderId, paymentId, signature)) {
+    const mode = getPaymentMode();
+    const { razorpay_order_id: orderId, razorpay_signature: signature } = req.body;
+    let paymentId = req.body.razorpay_payment_id;
+
+    if (mode === 'demo') {
+      // Demo checkout: there is no gateway to verify, so only demo orders created by this
+      // server for this user are accepted (checked below). Real orders can never be completed this way.
+      if (!String(orderId || '').startsWith('demo_order_')) return fail(res, 400, 'Not a demo order.');
+      paymentId = `demo_pay_${crypto.randomUUID()}`;
+    } else if (!verifySignature(orderId, paymentId, signature)) {
       return fail(res, 400, 'Payment signature verification failed.');
     }
 
     const payment = await Payment.findOne({ orderId, user: user._id });
     if (!payment) return fail(res, 404, 'Unknown payment order.');
+    if ((mode === 'demo') !== (payment.mode === 'demo')) return fail(res, 400, 'This payment does not match the current payment mode.');
 
     if (payment.status === 'CREATED') {
       await Payment.updateOne({ _id: payment._id, status: 'CREATED' }, { $set: { status: 'PAID', paymentId } });
@@ -141,7 +155,7 @@ export const listMyPayments = async (req, res) => {
     for (const p of payments) {
       if (p.status === 'PAID') {
         await creditTokens(p);
-      } else if (p.status === 'CREATED' && isPaymentsEnabled() && p.createdAt.getTime() > dayAgo && gatewayChecks < 3) {
+      } else if (p.status === 'CREATED' && p.mode === 'razorpay' && hasRazorpayKeys() && p.createdAt.getTime() > dayAgo && gatewayChecks < 3) {
         gatewayChecks += 1;
         // The browser may have closed after paying: ask the gateway.
         try {

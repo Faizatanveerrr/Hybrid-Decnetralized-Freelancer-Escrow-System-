@@ -7,7 +7,7 @@ const api = makeApi(be.port);
 const fail = async (e) => { console.log(be.getLog().slice(-2500)); throw e; };
 try {
   // ---------------- auth
-  const reg = async (name, role) => api('POST', '/auth/register', { body: { name, email: `${name}@t.io`, password: 'secret12', role } });
+  const reg = async (name, role) => api('POST', '/auth/register', { body: { name, email: `${name}@t.io`, password: 'Secret#12x', role } });
   const c = await reg('client', 'client'), f = await reg('freelancer', 'freelancer');
   assert.equal(c.status, 201); assert.ok(c.data.token);
   assert.equal(c.data.user.password, undefined); assert.equal(c.data.user.managedWallet, undefined);
@@ -16,7 +16,7 @@ try {
   const CT = c.data.token, FT = f.data.token, CU = c.data.user, FU = f.data.user;
 
   assert.equal((await api('POST', '/auth/login', { body: { email: 'client@t.io', password: 'nope' } })).status, 401);
-  const lg = await api('POST', '/auth/login', { body: { email: 'client@t.io', password: 'secret12' } });
+  const lg = await api('POST', '/auth/login', { body: { email: 'client@t.io', password: 'Secret#12x' } });
   assert.equal(lg.status, 200); assert.ok(lg.data.token);
   ok('login: wrong password rejected, right password returns a token');
   assert.equal((await api('GET', '/auth/me')).status, 401);

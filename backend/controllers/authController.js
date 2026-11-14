@@ -3,6 +3,7 @@ import { hashPassword, verifyPassword, isHashed } from '../utils/password.js';
 import { signToken } from '../utils/token.js';
 import { ensureManagedWallet } from '../services/walletService.js';
 import { requireUser } from '../middleware/authHelper.js';
+import { validatePassword } from '../utils/passwordPolicy.js';
 
 export const register = async (req, res) => {
   try {
@@ -12,8 +13,19 @@ export const register = async (req, res) => {
       return res.status(400).json({ success: false, message: 'Name, email, and password are required.' });
     }
 
-    if (String(password).length < 6) {
-      return res.status(400).json({ success: false, message: 'Password must be at least 6 characters.' });
+    const pwCheck = validatePassword(password, { email, name });
+    if (!pwCheck.valid) {
+      return res.status(400).json({
+        success: false,
+        message: `Password does not meet requirements: ${pwCheck.errors.join(', ')}.`,
+        errors: pwCheck.errors
+      });
+    }
+
+    // Wallet is optional; if one is supplied it must be a valid address.
+    const wallet = String(walletAddress || '').trim();
+    if (wallet && !/^0x[a-fA-F0-9]{40}$/.test(wallet)) {
+      return res.status(400).json({ success: false, message: 'Wallet address is invalid. Leave it blank to skip.' });
     }
 
     const normalizedEmail = email.trim().toLowerCase();
@@ -28,7 +40,7 @@ export const register = async (req, res) => {
       email: normalizedEmail,
       password: hashPassword(password),
       role: role.toLowerCase() === 'freelancer' ? 'freelancer' : 'client',
-      walletAddress: walletAddress.trim(),
+      walletAddress: wallet,
       bio: bio || (role === 'freelancer' ? 'Freelance specialist.' : 'Client.'),
       skills: Array.isArray(skills) ? skills : [],
       avatar: `https://api.dicebear.com/7.x/avataaars/svg?seed=${encodeURIComponent(name.trim())}`

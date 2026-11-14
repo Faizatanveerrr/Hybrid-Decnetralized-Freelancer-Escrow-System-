@@ -35,16 +35,17 @@ import {
   claimAfterTimeoutApi,
   createDisputeApi,
   uploadProjectFileApi,
-  getMessagesApi,
-  sendMessageApi,
   createProposalApi,
   getProjectProposalsApi,
   acceptProposalApi,
   rejectProposalApi,
   registerEscrowApi
 } from '../services/api.js';
+import ChatPanel from '../components/common/ChatPanel.jsx';
 import { shortenAddress } from '../services/blockchain.js';
 import { onchain, loadChainConfig, chainError, explorerAddress, txPrompt } from '../services/chain.js';
+import { loadIpfsConfig, uploadFile, uploadText, downloadFile, shortCid } from '../services/ipfs.js';
+import { roleForProject, idOf } from '../utils/roles.js';
 
 // Prefer the server's message; otherwise a readable wallet/chain error.
 const errMsg = (err, fallback) => err?.response?.data?.message || chainError(err) || fallback;
@@ -52,16 +53,21 @@ const errMsg = (err, fallback) => err?.response?.data?.message || chainError(err
 export default function ProjectDetailPage() {
   const { id } = useParams();
   const navigate = useNavigate();
-  const { user, role } = useAuth();
+  const { user, role: modeRole } = useAuth();
   const { refreshWallet } = useWallet();
 
   const [project, setProject] = useState(null);
+  // On this project you are its client or its freelancer; the mode switch only applies to outsiders.
+  const role = roleForProject(project, user, modeRole);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState(null);
   const [activeTab, setActiveTab] = useState('milestones'); // overview, milestones, files, messages, proposals
   const [toastMessage, setToastMessage] = useState('');
   const [chainConfig, setChainConfig] = useState({ enabled: false });
   const [deployingEscrow, setDeployingEscrow] = useState(false);
+  const [ipfsConfig, setIpfsConfig] = useState({ enabled: false });
+  const [submitFile, setSubmitFile] = useState(null);
+  const [submittingWork, setSubmittingWork] = useState(false);
 
   // Proposals state
   const [proposals, setProposals] = useState([]);
@@ -103,13 +109,9 @@ export default function ProjectDetailPage() {
     size: '1.8 MB'
   });
 
-  // Messages state
-  const [messages, setMessages] = useState([]);
-  const [newMessageText, setNewMessageText] = useState('');
-  const [sendingMsg, setSendingMsg] = useState(false);
-
   useEffect(() => {
     loadChainConfig().then(setChainConfig);
+    loadIpfsConfig().then(setIpfsConfig);
   }, []);
 
   useEffect(() => {
@@ -118,9 +120,6 @@ export default function ProjectDetailPage() {
   }, [id]);
 
   useEffect(() => {
-    if (activeTab === 'messages') {
-      loadMessages();
-    }
     if (activeTab === 'proposals') {
       loadProposals();
     }
@@ -230,40 +229,6 @@ export default function ProjectDetailPage() {
     }
   };
 
-  const loadMessages = async () => {
-    try {
-      const res = await getMessagesApi(id);
-      if (res.data.success) {
-        setMessages(res.data.messages || []);
-      }
-    } catch (err) {
-      console.error('Failed to load messages:', err);
-    }
-  };
-
-  const handleSendMessage = async (e) => {
-    e.preventDefault();
-    if (!newMessageText.trim()) return;
-
-    setSendingMsg(true);
-    try {
-      const res = await sendMessageApi(id, {
-        sender: user?._id || user?.id,
-        senderName: user?.name || (role === 'client' ? 'Client' : 'Freelancer'),
-        senderRole: role,
-        text: newMessageText
-      });
-      if (res.data.success) {
-        setMessages([...messages, res.data.message]);
-        setNewMessageText('');
-      }
-    } catch (err) {
-      alert('Failed to send message');
-    } finally {
-      setSendingMsg(false);
-    }
-  };
-
   // Client deploys the EscrowX contract from their wallet, then the server verifies it
   const handleDeployEscrow = async () => {
     if (!user?.walletAddress) {
@@ -357,26 +322,38 @@ export default function ProjectDetailPage() {
 
   const handleConfirmSubmitWork = async (e) => {
     e.preventDefault();
-    if (!submitWorkModal.proof.trim()) return;
+    if (!submitWorkModal.proof.trim() && !submitFile) return;
 
+    setSubmittingWork(true);
     try {
+      // 1. Optional deliverable file -> encrypted, stored on IPFS (hash = its content fingerprint)
+      let stored = null;
+      if (submitFile) {
+        setToastMessage('Encrypting and storing your file on IPFS...');
+        stored = await uploadFile(project._id, 'deliverable', submitFile);
+      }
+      // 2. On-chain, the contract records the file's hash (or the note if there is no file)
       let txHash;
       if (project.escrowAddress) {
         const ms = project.milestones.find((m) => m._id === submitWorkModal.milestoneId);
         setToastMessage(txPrompt(user, 'submission transaction'));
-        txHash = (await onchain.submit(project, ms, user, submitWorkModal.proof)).txHash;
+        txHash = (await onchain.submit(project, ms, user, stored ? stored.uri : submitWorkModal.proof)).txHash;
       }
       const res = await submitWorkApi(submitWorkModal.milestoneId, {
         proof: submitWorkModal.proof,
+        ...(stored ? { proofCid: stored.cid } : {}),
         ...(txHash ? { txHash } : {})
       });
       if (res.data.success) {
         setToastMessage('Deliverables submitted! Auto-release countdown started.');
         setSubmitWorkModal({ isOpen: false, milestoneId: null, proof: '' });
+        setSubmitFile(null);
         await loadProjectDetails();
       }
     } catch (err) {
       alert(errMsg(err, 'Submission failed'));
+    } finally {
+      setSubmittingWork(false);
     }
   };
 
@@ -397,7 +374,14 @@ export default function ProjectDetailPage() {
       if (project.escrowAddress) {
         const ms = project.milestones.find((m) => m._id === disputeModal.milestoneId);
         setToastMessage(txPrompt(user, 'dispute transaction'));
-        await onchain.raiseDispute(project, ms, user, disputeModal.claim.slice(0, 500));
+        // The claim is stored on IPFS and its hash goes on-chain (falls back to plain text).
+        let evidenceRef = disputeModal.claim.slice(0, 500);
+        if (ipfsConfig.enabled) {
+          try {
+            evidenceRef = (await uploadText(project._id, 'evidence', disputeModal.claim, 'dispute-claim.txt')).uri;
+          } catch (e) { /* keep the plain-text reference */ }
+        }
+        await onchain.raiseDispute(project, ms, user, evidenceRef);
       }
       const res = await createDisputeApi({
         milestoneId: disputeModal.milestoneId,
@@ -478,8 +462,9 @@ export default function ProjectDetailPage() {
     );
   }
 
-  const isClient = role === 'client';
-  const isProjectClient = project && (String(project.client?._id || project.client) === String(user?._id || user?.id));
+  const isProjectClient = Boolean(project) && idOf(project.client) === idOf(user);
+  const isProjectFreelancer = Boolean(project?.freelancer) && idOf(project.freelancer) === idOf(user);
+  const isClient = isProjectClient; // client actions are only for this project's client
   const myProposal = proposals.find(p => String(p.freelancerId?._id || p.freelancerId) === String(user?._id || user?.id));
   const milestonesList = project.milestones || project.milestonesList || [];
   const filesList = project.files || [];
@@ -573,7 +558,7 @@ export default function ProjectDetailPage() {
             { id: 'milestones', label: 'Milestones Timeline', count: milestonesList.length },
             { id: 'overview', label: 'Contract Overview' },
             { id: 'files', label: 'Deliverables & Files', count: filesList.length },
-            { id: 'messages', label: 'Project Chat' },
+            ...(isProjectClient || isProjectFreelancer ? [{ id: 'messages', label: 'Project Chat' }] : []),
             ...(isProjectClient || proposals.length > 0
               ? [{ id: 'proposals', label: 'Proposals', count: proposals.length }]
               : [])
@@ -690,6 +675,21 @@ export default function ProjectDetailPage() {
                       <div className="mt-2 p-3 bg-indigo-50/50 rounded-xl border border-indigo-100 text-xs text-indigo-900">
                         <span className="font-bold block mb-0.5">Submitted Proof / URL:</span>
                         <p className="font-mono text-[11px] break-all">{ms.proof}</p>
+                        {ms.proofCid && (
+                          <div className="mt-2 flex flex-wrap items-center gap-2">
+                            <button
+                              type="button"
+                              onClick={() => downloadFile(ms.proofCid, ms.proofName || 'deliverable').catch((e) => alert(e.message))}
+                              className="inline-flex items-center gap-1 px-2.5 py-1 rounded-md bg-indigo-600 text-white text-[11px] font-bold hover:bg-indigo-700"
+                            >
+                              Download {ms.proofName || 'file'}
+                            </button>
+                            <span className="font-mono text-[10px] text-indigo-700" title={ms.proofCid}>
+                              {ipfsConfig.simulated ? 'local' : 'IPFS'} · {shortCid(ms.proofCid)}
+                              {project.escrowAddress ? ' · hash recorded on-chain' : ''}
+                            </span>
+                          </div>
+                        )}
                       </div>
                     )}
                   </div>
@@ -743,13 +743,13 @@ export default function ProjectDetailPage() {
                       )}
 
                       {/* FREELANCER ACTIONS */}
-                      {!isClient && isPending && (
+                      {isProjectFreelancer && isPending && (
                         <div className="text-xs text-amber-700 bg-amber-50 p-2 rounded-xl text-center font-medium">
                           Waiting for client funding
                         </div>
                       )}
 
-                      {!isClient && isFunded && (
+                      {isProjectFreelancer && isFunded && (
                         <Button
                           variant="primary"
                           size="sm"
@@ -761,7 +761,7 @@ export default function ProjectDetailPage() {
                         </Button>
                       )}
 
-                      {!isClient && isSubmitted && (
+                      {isProjectFreelancer && isSubmitted && (
                         <>
                           <div className="text-[11px] text-sky-700 bg-sky-50 p-2 rounded-xl text-center font-medium">
                             Submitted • Under client review
@@ -905,59 +905,11 @@ export default function ProjectDetailPage() {
         </Card>
       )}
 
-      {/* Tab 4: Messages */}
-      {activeTab === 'messages' && (
+      {/* Tab 4: Messages (private to this project's client and hired freelancer) */}
+      {activeTab === 'messages' && (isProjectClient || isProjectFreelancer) && (
         <Card className="p-6">
           <h3 className="text-base font-bold text-slate-900 mb-4">Project Discussion</h3>
-          <div className="h-80 overflow-y-auto p-4 bg-slate-50 rounded-2xl border border-slate-100 space-y-3 mb-4">
-            {messages.length === 0 ? (
-              <p className="text-xs text-slate-400 text-center py-12">
-                No messages yet. Send a note to coordinate milestones.
-              </p>
-            ) : (
-              messages.map((m) => {
-                const isMe = m.sender === (user?.id || user?._id) || m.senderRole === role;
-                return (
-                  <div
-                    key={m._id}
-                    className={`flex flex-col ${isMe ? 'items-end' : 'items-start'}`}
-                  >
-                    <span className="text-[10px] text-slate-400 mb-0.5">
-                      {m.senderName} ({m.senderRole})
-                    </span>
-                    <div
-                      className={`max-w-md px-3.5 py-2 rounded-2xl text-xs ${
-                        isMe
-                          ? 'bg-indigo-600 text-white rounded-br-xs'
-                          : 'bg-white text-slate-800 border border-slate-200 rounded-bl-xs'
-                      }`}
-                    >
-                      {m.text}
-                    </div>
-                  </div>
-                );
-              })
-            )}
-          </div>
-
-          <form onSubmit={handleSendMessage} className="flex gap-2">
-            <input
-              type="text"
-              placeholder="Type your message..."
-              value={newMessageText}
-              onChange={(e) => setNewMessageText(e.target.value)}
-              className="flex-1 px-4 py-2.5 text-xs bg-white border border-slate-200 rounded-xl focus:outline-none focus:ring-2 focus:ring-indigo-500"
-            />
-            <Button
-              type="submit"
-              variant="primary"
-              size="sm"
-              icon={Send}
-              loading={sendingMsg}
-            >
-              Send
-            </Button>
-          </form>
+          <ChatPanel projectId={id} heightClass="h-80" />
         </Card>
       )}
 
@@ -1111,7 +1063,7 @@ export default function ProjectDetailPage() {
               Deliverables Proof / URL *
             </label>
             <textarea
-              required
+              required={!submitFile}
               rows={3}
               placeholder="e.g. GitHub PR #14 merged: https://github.com/repo/pull/14. Production build verified at https://app.example.com"
               value={submitWorkModal.proof}
@@ -1119,6 +1071,23 @@ export default function ProjectDetailPage() {
               className="w-full p-3 text-xs border border-slate-200 rounded-xl focus:outline-none focus:ring-2 focus:ring-indigo-500"
             />
           </div>
+          {ipfsConfig.enabled && (
+            <div>
+              <label className="block text-xs font-semibold text-slate-700 mb-1">
+                Or attach the deliverable file
+              </label>
+              <input
+                type="file"
+                onChange={(e) => setSubmitFile(e.target.files?.[0] || null)}
+                className="block w-full text-xs text-slate-600 file:mr-3 file:py-1.5 file:px-3 file:rounded-lg file:border-0 file:bg-indigo-50 file:text-indigo-700 file:font-semibold"
+              />
+              <p className="text-[11px] text-slate-500 mt-1">
+                The file is encrypted and stored on {ipfsConfig.simulated ? 'the server (demo mode, not the IPFS network)' : 'IPFS'};
+                only you and the client can open it. Its fingerprint is recorded on the blockchain so it cannot be changed later.
+                Maximum {ipfsConfig.maxMb} MB.
+              </p>
+            </div>
+          )}
           <div className="flex items-center justify-end gap-3 pt-2">
             <Button
               type="button"
@@ -1127,7 +1096,7 @@ export default function ProjectDetailPage() {
             >
               Cancel
             </Button>
-            <Button type="submit" variant="primary">
+            <Button type="submit" variant="primary" loading={submittingWork}>
               Submit to Client
             </Button>
           </div>

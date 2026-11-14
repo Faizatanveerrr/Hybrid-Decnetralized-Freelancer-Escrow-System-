@@ -5,7 +5,10 @@ export const notFound = (req, res, next) => {
 };
 
 export const errorHandler = (err, req, res, next) => {
-  const statusCode = res.statusCode === 200 ? 500 : res.statusCode;
+  // Errors raised by middleware (e.g. body-parser: 413 payload too large, 400 bad JSON)
+  // carry their own status; otherwise fall back to the response status, then 500.
+  const errStatus = Number(err.status || err.statusCode);
+  const statusCode = errStatus >= 400 && errStatus < 600 ? errStatus : (res.statusCode === 200 ? 500 : res.statusCode);
   res.status(statusCode).json({
     success: false,
     message: err.message || 'Internal Server Error',

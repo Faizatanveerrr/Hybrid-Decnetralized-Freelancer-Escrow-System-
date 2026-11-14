@@ -6,6 +6,7 @@ import { requireUser, projectRole } from '../middleware/authHelper.js';
 import { isChainEnabled, getChainConfig, dripGasIfNeeded, runSerial, sameAddress, friendlyChainError } from '../services/chainService.js';
 import { getManagedSigner, ensureManagedWallet } from '../services/walletService.js';
 import { MANAGED_ACTIONS, performManagedAction } from '../services/managedTxService.js';
+import { isIpfsEnabled, storeJson, buildSpec } from '../services/ipfsService.js';
 
 const fail = (res, code, message) => res.status(code).json({ success: false, message });
 
@@ -56,13 +57,23 @@ export const executeManagedTx = async (req, res) => {
         const freelancer = await User.findById(project.freelancer);
         if (!freelancer.walletAddress) await ensureManagedWallet(freelancer); // give them a wallet to be paid into
         if (!freelancer.walletAddress) return fail(res, 400, 'The freelancer has no wallet yet.');
+        // The agreed terms go to IPFS; their hash is fixed inside the contract.
+        let specUri = `escrowx://project/${project._id}`;
+        if (isIpfsEnabled()) {
+          try {
+            const spec = buildSpec(project, { clientWallet: user.walletAddress, freelancerWallet: freelancer.walletAddress });
+            specUri = (await storeJson(spec, { projectId: project._id, uploadedBy: user._id, kind: 'spec', name: 'job-spec.json' })).uri;
+          } catch (err) {
+            console.warn('Could not store job spec on IPFS:', err.message);
+          }
+        }
         params.deploy = {
           freelancer: freelancer.walletAddress,
           arbitrator: config.arbitratorAddress,
           token: config.tokenAddress,
           reviewPeriod: config.reviewPeriod,
           appealWindow: config.appealWindow,
-          specUri: `escrowx://project/${project._id}`,
+          specUri,
           milestones: project.milestones.map((m) => ({ amount: m.amount }))
         };
       } else {

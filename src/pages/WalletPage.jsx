@@ -25,7 +25,7 @@ import { shortenAddress, getEtherscanTxUrl } from '../services/blockchain.js';
 
 export default function WalletPage() {
   const { user } = useAuth();
-  const { address, balance, lockedInEscrow, network, connected, connectWallet, error: walletError, chainEnabled, faucetLoading, claimTestInr, paymentsEnabled, topUpLoading, topUp, walletType, managedAvailable, switchToManaged, loading: walletBusy, payoutConfig, payouts, withdrawLoading, withdraw } = useWallet();
+  const { address, balance, lockedInEscrow, network, connected, connectWallet, error: walletError, chainEnabled, faucetLoading, claimTestInr, paymentsEnabled, paymentMode, topUpLoading, topUp, walletType, managedAvailable, switchToManaged, loading: walletBusy, payoutConfig, payouts, withdrawLoading, withdraw } = useWallet();
 
   const [transactions, setTransactions] = useState([]);
   const [loading, setLoading] = useState(true);
@@ -33,6 +33,7 @@ export default function WalletPage() {
   const [toastMessage, setToastMessage] = useState('');
   const [topUpOpen, setTopUpOpen] = useState(false);
   const [topUpAmount, setTopUpAmount] = useState('1000');
+  const [demoMethod, setDemoMethod] = useState('upi');
   const [withdrawOpen, setWithdrawOpen] = useState(false);
   const [withdrawAmount, setWithdrawAmount] = useState('');
   const [withdrawVpa, setWithdrawVpa] = useState(user?.upiId || '');
@@ -127,6 +128,16 @@ export default function WalletPage() {
 
       <Modal isOpen={topUpOpen} onClose={() => setTopUpOpen(false)} title="Add money to your wallet" maxWidth="max-w-md">
         <div className="space-y-4">
+          {paymentMode === 'demo' && (
+            <div className="rounded-lg border-2 border-dashed border-amber-400 bg-amber-50 p-3 text-xs text-amber-900">
+              <p className="font-bold">DEMO CHECKOUT - no real payment is made</p>
+              <p className="mt-0.5">
+                No payment gateway is connected, so this form simulates one. The tokens are credited as if the
+                payment succeeded. The real Razorpay checkout (UPI / Paytm / cards) replaces this screen as soon as
+                Razorpay keys are configured.
+              </p>
+            </div>
+          )}
           <p className="text-sm text-slate-600">
             Pay with UPI, Paytm or card. You receive the same amount as INR tokens (₹1 = 1 token) in your
             wallet, which you then use to fund escrow milestones through the smart contract.
@@ -153,12 +164,32 @@ export default function WalletPage() {
               ))}
             </div>
           </div>
-          <p className="text-[11px] text-slate-500 bg-slate-50 border border-slate-200 rounded-lg p-2.5">
-            Test mode: no real money is charged. In the payment window choose UPI and enter
-            <span className="font-mono font-bold"> success@razorpay</span> to simulate a successful payment.
-          </p>
+          {paymentMode === 'demo' ? (
+            <div>
+              <label className="block text-xs font-bold text-slate-700 mb-1">Pay using (demo)</label>
+              <div className="flex gap-2">
+                {[['upi', 'UPI'], ['paytm', 'Paytm'], ['card', 'Card']].map(([key, label]) => (
+                  <button
+                    key={key}
+                    type="button"
+                    onClick={() => setDemoMethod(key)}
+                    className={`flex-1 px-3 py-2 text-xs font-semibold rounded-lg border ${
+                      demoMethod === key ? 'border-indigo-500 bg-indigo-50 text-indigo-700' : 'border-slate-200 text-slate-600 hover:bg-slate-50'
+                    }`}
+                  >
+                    {label}
+                  </button>
+                ))}
+              </div>
+            </div>
+          ) : (
+            <p className="text-[11px] text-slate-500 bg-slate-50 border border-slate-200 rounded-lg p-2.5">
+              Test mode: no real money is charged. In the payment window choose UPI and enter
+              <span className="font-mono font-bold"> success@razorpay</span> to simulate a successful payment.
+            </p>
+          )}
           <Button variant="primary" className="w-full" onClick={handleTopUp}>
-            Pay ₹{Number(topUpAmount) > 0 ? Number(topUpAmount).toLocaleString() : '0'}
+            {paymentMode === 'demo' ? 'Pay (demo) ₹' : 'Pay ₹'}{Number(topUpAmount) > 0 ? Number(topUpAmount).toLocaleString() : '0'}
           </Button>
         </div>
       </Modal>
