@@ -28,8 +28,8 @@ export const signToken = (userId, ttlSeconds = 7 * 24 * 3600) => {
   return `${head}.${body}.${sign(`${head}.${body}`)}`;
 };
 
-/** Returns the user id (sub) for a valid, unexpired token, else null. */
-export const verifyToken = (token) => {
+/** Returns { sub, iat } for a valid, unexpired token, else null. */
+export const verifyTokenPayload = (token) => {
   try {
     const [head, body, signature] = String(token || '').split('.');
     if (!head || !body || !signature) return null;
@@ -38,8 +38,11 @@ export const verifyToken = (token) => {
     if (expected.length !== actual.length || !crypto.timingSafeEqual(expected, actual)) return null;
     const payload = JSON.parse(Buffer.from(body, 'base64url').toString('utf8'));
     if (!payload.sub || !payload.exp || payload.exp < Math.floor(Date.now() / 1000)) return null;
-    return payload.sub;
+    return { sub: payload.sub, iat: payload.iat || 0 };
   } catch {
     return null;
   }
 };
+
+/** Returns the user id (sub) for a valid, unexpired token, else null. */
+export const verifyToken = (token) => verifyTokenPayload(token)?.sub || null;

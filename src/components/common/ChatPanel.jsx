@@ -201,6 +201,20 @@ export default function ChatPanel({ projectId, heightClass = 'h-96', onActivity 
             {messages.map((m, i) => {
               const showDay = i === 0 || new Date(m.createdAt).toDateString() !== new Date(messages[i - 1].createdAt).toDateString();
               const sameSender = i > 0 && messages[i - 1].sender === m.sender && !showDay;
+              if (m.kind === 'system') {
+                return (
+                  <React.Fragment key={m._id}>
+                    {showDay && (
+                      <div className="flex justify-center py-2">
+                        <span className="text-[10px] font-semibold text-slate-400 bg-white border border-slate-200 rounded-full px-2.5 py-0.5">{dayLabel(m.createdAt)}</span>
+                      </div>
+                    )}
+                    <div className="flex justify-center py-1.5">
+                      <p className="max-w-md text-center text-[11px] text-slate-500 bg-slate-100 border border-slate-200 rounded-xl px-3 py-2">{m.text}</p>
+                    </div>
+                  </React.Fragment>
+                );
+              }
               return (
                 <React.Fragment key={m._id}>
                   {showDay && (

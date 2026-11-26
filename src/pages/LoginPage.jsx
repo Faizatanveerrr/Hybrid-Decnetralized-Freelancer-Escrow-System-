@@ -1,10 +1,12 @@
-import React, { useState, useMemo } from 'react';
+import React, { useState, useMemo, useEffect } from 'react';
 import { useNavigate, Link } from 'react-router-dom';
 import { ShieldCheck, UserCheck, Briefcase, Lock, Mail, User, Wallet, CheckCircle2, Eye, EyeOff, Check, X } from 'lucide-react';
 import Button from '../components/common/Button.jsx';
 import Card from '../components/common/Card.jsx';
 import { useAuth } from '../context/AuthContext.jsx';
 import { useWallet } from '../context/WalletContext.jsx';
+import GoogleSignInButton from '../components/common/GoogleSignInButton.jsx';
+import { getAuthConfigApi } from '../services/api.js';
 import { getPasswordChecks, getStrength, isValidWalletAddress } from '../utils/passwordPolicy.js';
 
 const inputCls =
@@ -12,7 +14,7 @@ const inputCls =
 
 export default function LoginPage() {
   const navigate = useNavigate();
-  const { login, register } = useAuth();
+  const { login, register, loginWithGoogle } = useAuth();
   const { connectWallet } = useWallet();
 
   const [isRegister, setIsRegister] = useState(false);
@@ -29,6 +31,15 @@ export default function LoginPage() {
   const [walletConnected, setWalletConnected] = useState(false);
   const [error, setError] = useState('');
   const [loading, setLoading] = useState(false);
+  const [googleClientId, setGoogleClientId] = useState('');
+  const [pendingGoogle, setPendingGoogle] = useState(null); // new Google user who still has to pick a role
+
+  // Google sign-in appears only when the server has a Google client id configured.
+  useEffect(() => {
+    let alive = true;
+    getAuthConfigApi().then((r) => { if (alive) setGoogleClientId(r.data?.googleClientId || ''); }).catch(() => {});
+    return () => { alive = false; };
+  }, []);
 
   const checks = useMemo(
     () => getPasswordChecks(formData.password, { email: formData.email, name: formData.name }),
@@ -54,6 +65,22 @@ export default function LoginPage() {
     setFormData((prev) => ({ ...prev, walletAddress: '' }));
     setWalletConnected(false);
   };
+
+  const finishGoogle = async (credential, chosenRole) => {
+    setError('');
+    setLoading(true);
+    try {
+      const res = await loginWithGoogle(credential, chosenRole);
+      if (res.success) { navigate('/dashboard'); return; }
+      if (res.needsRole) { setPendingGoogle({ credential, name: res.name, email: res.email }); return; }
+      setError(res.message || 'Google sign-in failed.');
+    } finally {
+      setLoading(false);
+    }
+  };
+
+  // On the Register tab the chosen role is used straight away; on Sign In a new person is asked.
+  const handleGoogleCredential = (credential) => finishGoogle(credential, isRegister ? role : undefined);
 
   const handleSubmit = async (e) => {
     e.preventDefault();
@@ -260,6 +287,14 @@ export default function LoginPage() {
               )}
             </div>
 
+            {!isRegister && (
+              <div className="text-right -mt-2">
+                <Link to="/forgot-password" className="text-[11px] font-semibold text-indigo-600 hover:text-indigo-800">
+                  Forgot password?
+                </Link>
+              </div>
+            )}
+
             {isRegister && (
               <div>
                 <label className="block text-xs font-semibold text-slate-700 mb-1">Confirm Password</label>
@@ -336,6 +371,30 @@ export default function LoginPage() {
               {isRegister ? 'Register Account' : 'Sign In'}
             </Button>
           </form>
+
+          {/* Sign in with Google (only when the server is set up for it) */}
+          {googleClientId && (
+            <div className="mt-5">
+              <div className="flex items-center gap-3 mb-4">
+                <div className="flex-1 h-px bg-slate-200" />
+                <span className="text-[11px] text-slate-400 font-semibold uppercase tracking-wider">or</span>
+                <div className="flex-1 h-px bg-slate-200" />
+              </div>
+              {pendingGoogle ? (
+                <div className="p-4 bg-indigo-50/60 border border-indigo-100 rounded-xl text-center">
+                  <p className="text-xs font-semibold text-slate-800">Welcome{pendingGoogle.name ? `, ${pendingGoogle.name}` : ''}!</p>
+                  <p className="text-[11px] text-slate-500 mb-3">How will you use EscrowX? ({pendingGoogle.email})</p>
+                  <div className="grid grid-cols-2 gap-2">
+                    <Button type="button" variant="outline" loading={loading} onClick={() => finishGoogle(pendingGoogle.credential, 'client')}>I am a Client</Button>
+                    <Button type="button" variant="outline" loading={loading} onClick={() => finishGoogle(pendingGoogle.credential, 'freelancer')}>I am a Freelancer</Button>
+                  </div>
+                  <button type="button" onClick={() => setPendingGoogle(null)} className="mt-2 text-[11px] text-slate-500 underline cursor-pointer">Cancel</button>
+                </div>
+              ) : (
+                <GoogleSignInButton clientId={googleClientId} onCredential={handleGoogleCredential} text={isRegister ? 'signup_with' : 'signin_with'} />
+              )}
+            </div>
+          )}
 
           {/* Toggle between Login and Register */}
           <div className="mt-5 pt-4 border-t border-slate-100 text-center">

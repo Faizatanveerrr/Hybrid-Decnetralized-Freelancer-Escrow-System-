@@ -1,6 +1,6 @@
 import mongoose from 'mongoose';
 import User from '../models/User.js';
-import { verifyToken } from '../utils/token.js';
+import { verifyTokenPayload } from '../utils/token.js';
 
 /**
  * Resolve the acting user from a signed `Authorization: Bearer <token>` header.
@@ -11,9 +11,12 @@ import { verifyToken } from '../utils/token.js';
 export const getAuthUser = async (req) => {
   const auth = req.headers.authorization || '';
   if (auth.startsWith('Bearer ')) {
-    const userId = verifyToken(auth.slice(7));
-    if (!userId || !mongoose.isValidObjectId(userId)) return null;
-    return await User.findById(userId);
+    const payload = verifyTokenPayload(auth.slice(7));
+    if (!payload || !mongoose.isValidObjectId(payload.sub)) return null;
+    const user = await User.findById(payload.sub);
+    // A password reset signs out every session that was opened before it.
+    if (user?.passwordChangedAt && payload.iat < Math.floor(user.passwordChangedAt.getTime() / 1000)) return null;
+    return user;
   }
   if (process.env.ALLOW_INSECURE_HEADER_AUTH === 'true') {
     const userId = req.headers['x-user-id'];

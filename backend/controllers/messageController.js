@@ -45,7 +45,8 @@ const idStr = (v) => String(v?._id || v || '');
 
 // Only what the UI needs: no read-receipt arrays, no foreign ids besides the sender's.
 const serialize = (m, meId, otherId) => {
-  const mine = idStr(m.sender) === idStr(meId);
+  const system = m.kind === 'system';
+  const mine = !system && idStr(m.sender) === idStr(meId);
   const readBy = Array.isArray(m.readBy) ? m.readBy.map(idStr) : [];
   return {
     _id: m._id,
@@ -53,12 +54,41 @@ const serialize = (m, meId, otherId) => {
     sender: idStr(m.sender),
     senderName: m.senderName,
     senderRole: m.senderRole,
+    kind: system ? 'system' : 'user',
     text: m.text,
     createdAt: m.createdAt,
     mine,
     seen: mine && otherId ? readBy.includes(idStr(otherId)) : false
   };
 };
+
+/**
+ * Opens the conversation when a freelancer is selected: a platform notice that both people see
+ * (unread for the freelancer, so it shows up in their Messages list and badge straight away).
+ * Never blocks hiring if it fails.
+ */
+export const postSystemMessage = async (project, text) => {
+  try {
+    if (!project?.client || !project?.freelancer) return null;
+    return await Message.create({
+      projectId: project._id,
+      sender: project.client,
+      senderName: 'EscrowX',
+      senderRole: 'client',
+      kind: 'system',
+      text: String(text).slice(0, MAX_MESSAGE_LENGTH),
+      readBy: [project.client],
+      createdAt: new Date()
+    });
+  } catch (err) {
+    console.error('Could not post chat notice:', err.message);
+    return null;
+  }
+};
+
+export const hiredNotice = (project) =>
+  `${project.clientName || 'The client'} selected ${project.freelancerName || 'the freelancer'} for "${project.title}". ` +
+  'You can discuss the work and milestones here. Only the two of you can read this chat.';
 
 const chatState = (project) => {
   if (!project.freelancer) return { chatOpen: false, closedReason: 'Chat opens once a freelancer is hired for this project.' };

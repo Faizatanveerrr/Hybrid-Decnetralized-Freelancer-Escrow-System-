@@ -1,3 +1,4 @@
+import { postSystemMessage, hiredNotice } from './messageController.js';
 import mongoose from 'mongoose';
 import Invitation from '../models/Invitation.js';
 import Proposal from '../models/Proposal.js';
@@ -153,6 +154,7 @@ export const acceptInvitation = async (req, res) => {
     project.freelancerWallet = authUser.walletAddress || '';
     project.status = 'ACTIVE';
     await project.save();
+    await postSystemMessage(project, hiredNotice(project));
 
     // Mark invitation accepted
     invitation.status = 'ACCEPTED';

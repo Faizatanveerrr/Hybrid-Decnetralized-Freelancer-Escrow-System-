@@ -27,6 +27,12 @@ const messageSchema = new mongoose.Schema({
     required: true,
     maxlength: MAX_MESSAGE_LENGTH
   },
+  // 'system' messages are written by the platform (e.g. "Anna selected Ben"), not typed by a person.
+  kind: {
+    type: String,
+    enum: ['user', 'system'],
+    default: 'user'
+  },
   // Users who have opened this message (the sender counts as having read it).
   // Messages created before this field existed have none and are treated as read.
   readBy: [{

@@ -1,5 +1,5 @@
 import React, { createContext, useContext, useState, useEffect } from 'react';
-import { loginApi, registerApi, updateUserApi } from '../services/api.js';
+import { loginApi, registerApi, updateUserApi, googleAuthApi } from '../services/api.js';
 
 const AuthContext = createContext(null);
 
@@ -98,6 +98,25 @@ export const AuthProvider = ({ children }) => {
     }
   };
 
+  // Google sign-in. A brand-new person gets { needsRole: true } and must pick a role first.
+  const loginWithGoogle = async (credential, chosenRole) => {
+    setLoading(true);
+    try {
+      const res = await googleAuthApi(credential, chosenRole);
+      if (res.data?.success && res.data.user) {
+        setUser({ ...res.data.user, token: res.data.token });
+        setRole(res.data.user.role || 'client');
+        return { success: true, user: res.data.user };
+      }
+      if (res.data?.needsRole) return { success: false, needsRole: true, name: res.data.name, email: res.data.email };
+      return { success: false, message: res.data?.message || 'Google sign-in failed' };
+    } catch (err) {
+      return { success: false, message: err.response?.data?.message || err.message };
+    } finally {
+      setLoading(false);
+    }
+  };
+
   const register = async (userData) => {
     setLoading(true);
     try {
@@ -131,6 +150,7 @@ export const AuthProvider = ({ children }) => {
         updateUser,
         switchRole,
         login,
+        loginWithGoogle,
         register,
         logout
       }}

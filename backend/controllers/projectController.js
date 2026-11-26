@@ -1,3 +1,4 @@
+import { postSystemMessage, hiredNotice } from './messageController.js';
 import mongoose from 'mongoose';
 import Project from '../models/Project.js';
 import Milestone from '../models/Milestone.js';
@@ -128,6 +129,8 @@ export const createProject = async (req, res) => {
 
     project.milestones = createdMilestones;
     await project.save();
+
+    if (project.freelancer) await postSystemMessage(project, hiredNotice(project));
 
     const populated = await Project.findById(project._id).populate('milestones');
 

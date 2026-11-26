@@ -139,5 +139,19 @@ assert.ok(qs.includes(String(ben._id)) && qs.includes('"$ne":null'));
 assert.equal((await call(ctl.getConversations, null)).code, 401);
 ok('conversation list is built from the caller\'s own projects with a hired freelancer only');
 
+// ---- the hire notice that opens the conversation
+const fresh = { ...P, _id: oid() }; projects.set(String(fresh._id), fresh);
+const sysBefore = store.length;
+assert.equal(await ctl.postSystemMessage(OPEN, ctl.hiredNotice(OPEN)), null);          // nobody hired yet -> no notice
+assert.ok(await ctl.postSystemMessage(fresh, ctl.hiredNotice(fresh)));
+assert.equal(store.length, sysBefore + 1);
+for (const who of [anna, ben]) {
+  const view = await get(who, fresh, { peek: '1' });
+  assert.equal(view.messages.length, 1); assert.equal(view.messages[0].kind, 'system'); assert.equal(view.messages[0].mine, false);
+  assert.match(view.messages[0].text, /selected Ben/);
+}
+assert.equal((await get(carl, fresh)).code, 403);
+ok('selecting a freelancer posts a notice both people see (unread for the freelancer); outsiders still refused');
+
 console.log(`\n${n} checks passed`);
 process.exit(0);
