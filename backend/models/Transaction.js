@@ -35,6 +35,10 @@ const transactionSchema = new mongoose.Schema({
     type: String, 
     required: true 
   },
+  // Accounts involved. Lets a payment show up in the right person's wallet even when no wallet
+  // address was on the project at the time (or the person changed wallet later).
+  fromUser: { type: mongoose.Schema.Types.ObjectId, ref: 'User' },
+  toUser: { type: mongoose.Schema.Types.ObjectId, ref: 'User' },
   txHash: { 
     type: String, 
     default: '' 

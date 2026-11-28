@@ -1,3 +1,5 @@
+import IpfsObject from '../models/IpfsObject.js';
+import { isValidCid } from '../services/ipfsService.js';
 import { postSystemMessage, hiredNotice } from './messageController.js';
 import mongoose from 'mongoose';
 import Project from '../models/Project.js';
@@ -199,7 +201,7 @@ export const deleteProject = async (req, res) => {
 
 export const uploadProjectFile = async (req, res) => {
   try {
-    const { name, size } = req.body;
+    const { name, size, cid } = req.body;
     if (!mongoose.isValidObjectId(req.params.id)) {
       return res.status(404).json({ success: false, message: 'Invalid project ID' });
     }
@@ -214,12 +216,22 @@ export const uploadProjectFile = async (req, res) => {
     }
     const uploadedBy = authUser.name;
 
+    // A real file must be one this person uploaded to this project through the IPFS service.
+    let stored = null;
+    if (cid) {
+      stored = isValidCid(cid) ? await IpfsObject.findOne({ cid }) : null;
+      if (!stored || String(stored.projectId) !== String(project._id) || String(stored.uploadedBy) !== String(authUser._id)) {
+        return res.status(400).json({ success: false, message: 'That file was not uploaded by you for this project.' });
+      }
+    }
+
     const newFile = {
-      name: name || 'file.pdf',
+      name: stored?.name || name || 'file.pdf',
       size: size || '1.0 MB',
       uploadedBy: uploadedBy || 'User',
       uploadedAt: new Date(),
-      url: '#'
+      url: '#',
+      ...(stored ? { cid: stored.cid } : {})
     };
 
     project.files.push(newFile);

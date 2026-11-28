@@ -63,7 +63,8 @@ const projectSchema = new mongoose.Schema({
     size: String,
     uploadedBy: String,
     uploadedAt: { type: Date, default: Date.now },
-    url: String
+    url: String,
+    cid: String // set when the file was really stored (encrypted) through the IPFS service
   }],
   createdAt: { 
     type: Date, 

@@ -7,6 +7,20 @@ import { requireUser, sameId } from '../middleware/authHelper.js';
 import { isChainEnabled, getInrBalanceOf } from '../services/chainService.js';
 import { ensureManagedWallet, isManagedEnabled, hasActiveEscrow } from '../services/walletService.js';
 
+/**
+ * Payments made before accounts were recorded on each transaction only say "Freelancer" or "Client".
+ * They are still this person's if they belong to a project this person is on.
+ */
+const legacyClauses = async (user) => {
+  const mine = await Project.find({ $or: [{ client: user._id }, { freelancer: user._id }] });
+  const asFreelancer = mine.filter((p) => String(p.freelancer) === String(user._id)).map((p) => p._id);
+  const asClient = mine.filter((p) => String(p.client) === String(user._id)).map((p) => p._id);
+  return [
+    ...(asFreelancer.length ? [{ to: 'Freelancer', projectId: { $in: asFreelancer } }] : []),
+    ...(asClient.length ? [{ to: 'Client', projectId: { $in: asClient } }] : [])
+  ];
+};
+
 export const getWalletInfo = async (req, res) => {
   try {
     const { userId } = req.params;
@@ -64,11 +78,25 @@ export const getWalletInfo = async (req, res) => {
       lockedEscrowUSDC = lockedMilestones.reduce((acc, m) => acc + (Number(m.amount) || 0), 0);
     }
 
+    // Database mode (no token on a blockchain): nothing is really transferred, so the balance shown is the
+    // total this account has been paid so far (releases, dispute wins, refunds) from the escrow ledger.
+    const ledgerMode = !isChainEnabled();
+    let ledgerBalance = 0;
+    if (ledgerMode) {
+      const received = await Transaction.find({
+        type: { $in: ['RELEASE', 'REFUND', 'DISPUTE_PAYOUT'] },
+        status: 'CONFIRMED',
+        $or: [{ toUser: user._id }, ...(walletAddress ? [{ to: walletAddress }] : []), ...(await legacyClauses(user))]
+      });
+      ledgerBalance = received.reduce((acc, t) => acc + (Number(t.amount) || 0), 0);
+    }
+
     res.json({
       success: true,
       wallet: {
         address: walletAddress,
-        balanceUSDC: 0,
+        balanceUSDC: ledgerBalance,
+        ledgerMode,
         onChainBalance,
         walletType: user.walletType || 'external',
         managedAvailable: isManagedEnabled(),
@@ -94,9 +122,14 @@ export const getTransactions = async (req, res) => {
 
     if (mongoose.isValidObjectId(userId)) {
       const user = await User.findById(userId);
-      if (user?.walletAddress) {
+      if (user) {
         transactions = await Transaction.find({
-          $or: [{ from: user.walletAddress }, { to: user.walletAddress }]
+          $or: [
+            { fromUser: user._id },
+            { toUser: user._id },
+            ...(user.walletAddress ? [{ from: user.walletAddress }, { to: user.walletAddress }] : []),
+            ...(await legacyClauses(user))
+          ]
         }).sort({ createdAt: -1 });
       }
     }

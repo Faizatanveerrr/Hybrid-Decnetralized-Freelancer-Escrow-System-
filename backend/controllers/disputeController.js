@@ -3,6 +3,7 @@ import Dispute from '../models/Dispute.js';
 import Milestone from '../models/Milestone.js';
 import Project from '../models/Project.js';
 import Transaction from '../models/Transaction.js';
+import User from '../models/User.js';
 import { analyzeDispute } from '../services/aiService.js';
 import { releasePayment } from '../services/blockchainService.js';
 import { requireUser, projectRole } from '../middleware/authHelper.js';
@@ -448,7 +449,9 @@ export const finalizeRuling = async (req, res) => {
     if (!claimed) return fail(res, 409, 'This dispute was just finalized.');
 
     const amount = dispute.amount || 0;
-    const recipientWallet = winner === 'client' ? (project?.clientWallet || '') : (project?.freelancerWallet || '');
+    const winnerId = winner === 'client' ? project?.client : project?.freelancer;
+    let recipientWallet = winner === 'client' ? (project?.clientWallet || '') : (project?.freelancerWallet || '');
+    if (!recipientWallet && winnerId) recipientWallet = (await User.findById(winnerId).select('walletAddress'))?.walletAddress || '';
     const releaseRes = project?.escrowAddress
       ? { txHash: chainTxHash }
       : await releasePayment(dispute._id, amount, recipientWallet);
@@ -467,6 +470,7 @@ export const finalizeRuling = async (req, res) => {
       amount,
       from: 'Escrow Vault',
       to: recipientWallet || (winner === 'client' ? 'Client' : 'Freelancer'),
+      toUser: winnerId,
       txHash: releaseRes.txHash || '',
       status: 'CONFIRMED'
     });

@@ -105,8 +105,8 @@ export default function ProjectDetailPage() {
 
   const [uploadFileModal, setUploadFileModal] = useState({
     isOpen: false,
-    name: '',
-    size: '1.8 MB'
+    file: null,
+    uploading: false
   });
 
   useEffect(() => {
@@ -422,23 +422,28 @@ export default function ProjectDetailPage() {
   };
 
   // Upload proof file
+  // Reference files for the project (NOT the milestone submission - that is "Submit Work" on the milestone).
   const handleUploadFile = async (e) => {
     e.preventDefault();
-    if (!uploadFileModal.name.trim()) return;
+    const file = uploadFileModal.file;
+    if (!file || !ipfsConfig.enabled) return;
 
+    setUploadFileModal((m) => ({ ...m, uploading: true }));
     try {
+      const stored = await uploadFile(project._id, isProjectFreelancer ? 'deliverable' : 'evidence', file);
       const res = await uploadProjectFileApi(id, {
-        name: uploadFileModal.name,
-        size: uploadFileModal.size,
-        uploadedBy: user?.name || (role === 'client' ? 'Client' : 'Freelancer')
+        name: file.name,
+        size: `${(file.size / 1024 / 1024).toFixed(2)} MB`,
+        cid: stored.cid
       });
       if (res.data.success) {
-        setToastMessage('File added to project vault.');
-        setUploadFileModal({ isOpen: false, name: '', size: '1.8 MB' });
+        setToastMessage('File stored (encrypted) in the project files.');
+        setUploadFileModal({ isOpen: false, file: null, uploading: false });
         await loadProjectDetails();
       }
     } catch (err) {
-      alert('Upload failed');
+      alert(errMsg(err, 'Upload failed'));
+      setUploadFileModal((m) => ({ ...m, uploading: false }));
     }
   };
 
@@ -857,15 +862,15 @@ export default function ProjectDetailPage() {
           <div className="flex items-center justify-between">
             <div>
               <h3 className="text-base font-bold text-slate-900">Project Deliverables & Files</h3>
-              <p className="text-xs text-slate-500">Proofs, wireframes, and design assets</p>
+              <p className="text-xs text-slate-500">Reference files, wireframes and design assets. To get paid, use <b>Submit Work</b> on the milestone: files added here do not release any money.</p>
             </div>
             <Button
               variant="outline"
               size="sm"
               icon={UploadCloud}
-              onClick={() => setUploadFileModal({ isOpen: true, name: '', size: '2.5 MB' })}
+              onClick={() => setUploadFileModal({ isOpen: true, file: null, uploading: false })}
             >
-              Upload Proof
+              Upload File
             </Button>
           </div>
 
@@ -891,13 +896,17 @@ export default function ProjectDetailPage() {
                       </p>
                     </div>
                   </div>
-                  <a
-                    href={file.url || '#'}
-                    download={file.name}
-                    className="text-xs font-bold text-indigo-600 hover:text-indigo-800 flex items-center gap-1 cursor-pointer"
-                  >
-                    Download <ExternalLink className="w-3.5 h-3.5" />
-                  </a>
+                  {file.cid ? (
+                    <button
+                      type="button"
+                      onClick={() => downloadFile(file.cid, file.name).catch((e) => alert(e.message))}
+                      className="text-xs font-bold text-indigo-600 hover:text-indigo-800 flex items-center gap-1 cursor-pointer"
+                    >
+                      Download <ExternalLink className="w-3.5 h-3.5" />
+                    </button>
+                  ) : (
+                    <span className="text-[11px] text-slate-400" title="Added without a file (older entry)">No file attached</span>
+                  )}
                 </div>
               ))}
             </div>
@@ -1071,6 +1080,12 @@ export default function ProjectDetailPage() {
               className="w-full p-3 text-xs border border-slate-200 rounded-xl focus:outline-none focus:ring-2 focus:ring-indigo-500"
             />
           </div>
+          {!ipfsConfig.enabled && (
+            <p className="text-[11px] text-amber-700 bg-amber-50 border border-amber-200 rounded-lg px-3 py-2">
+              Attaching a file is off on this server (set <code>IPFS_PROVIDER="local"</code> in <code>.env</code> and restart the backend).
+              You can still submit a link or description above.
+            </p>
+          )}
           {ipfsConfig.enabled && (
             <div>
               <label className="block text-xs font-semibold text-slate-700 mb-1">
@@ -1145,22 +1160,31 @@ export default function ProjectDetailPage() {
       <Modal
         isOpen={uploadFileModal.isOpen}
         onClose={() => setUploadFileModal({ ...uploadFileModal, isOpen: false })}
-        title="Upload Project Deliverable"
+        title="Upload Project File"
       >
         <form onSubmit={handleUploadFile} className="space-y-4">
-          <div>
-            <label className="block text-xs font-semibold text-slate-700 mb-1">
-              File Name *
-            </label>
-            <input
-              type="text"
-              required
-              placeholder="e.g. final_vector_logo.svg"
-              value={uploadFileModal.name}
-              onChange={(e) => setUploadFileModal({ ...uploadFileModal, name: e.target.value })}
-              className="w-full px-3 py-2 text-xs border border-slate-200 rounded-xl focus:outline-none focus:ring-2 focus:ring-indigo-500"
-            />
-          </div>
+          <p className="text-xs text-slate-600 leading-relaxed">
+            Adds a reference file to this project (wireframes, assets, notes). It is encrypted and only you and the other
+            person on this project can open it. <b>This does not submit milestone work</b> - to get paid, use
+            <b> Submit Work</b> on the milestone.
+          </p>
+          {ipfsConfig.enabled ? (
+            <div>
+              <label className="block text-xs font-semibold text-slate-700 mb-1">Choose a file from your computer *</label>
+              <input
+                type="file"
+                required
+                onChange={(e) => setUploadFileModal({ ...uploadFileModal, file: e.target.files?.[0] || null })}
+                className="block w-full text-xs text-slate-600 file:mr-3 file:py-1.5 file:px-3 file:rounded-lg file:border-0 file:bg-indigo-50 file:text-indigo-700 file:font-semibold"
+              />
+              <p className="text-[11px] text-slate-500 mt-1">Maximum {ipfsConfig.maxMb} MB.</p>
+            </div>
+          ) : (
+            <div className="p-3 bg-amber-50 border border-amber-200 text-amber-900 text-xs rounded-xl">
+              File storage is switched off on this server, so files cannot be uploaded. Set <code>IPFS_PROVIDER="local"</code> in
+              the server's <code>.env</code> file and restart the backend.
+            </div>
+          )}
           <div className="flex items-center justify-end gap-3 pt-2">
             <Button
               type="button"
@@ -1169,7 +1193,7 @@ export default function ProjectDetailPage() {
             >
               Cancel
             </Button>
-            <Button type="submit" variant="primary">
+            <Button type="submit" variant="primary" loading={uploadFileModal.uploading} disabled={!ipfsConfig.enabled || !uploadFileModal.file}>
               Upload
             </Button>
           </div>

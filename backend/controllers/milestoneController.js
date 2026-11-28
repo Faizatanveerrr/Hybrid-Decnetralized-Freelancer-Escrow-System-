@@ -2,6 +2,7 @@ import mongoose from 'mongoose';
 import Milestone from '../models/Milestone.js';
 import Project from '../models/Project.js';
 import Transaction from '../models/Transaction.js';
+import User from '../models/User.js';
 import {
   fundMilestone as blockchainFund,
   approveMilestone as blockchainApprove,
@@ -16,6 +17,15 @@ import { isValidCid, uriFor, cidFromUri } from '../services/ipfsService.js';
 const REVIEW_PERIOD_HOURS = 72;
 
 const fail = (res, code, message) => res.status(code).json({ success: false, message });
+
+/** The wallet on the project, or - if it was empty when the freelancer/client was added - the account's current one. */
+const walletOf = async (project, who) => {
+  const onProject = who === 'client' ? project.clientWallet : project.freelancerWallet;
+  if (onProject) return onProject;
+  const id = who === 'client' ? project.client : project.freelancer;
+  const u = id ? await User.findById(id).select('walletAddress') : null;
+  return u?.walletAddress || '';
+};
 
 /**
  * Load milestone + project and verify the caller has the required role.
@@ -144,7 +154,7 @@ export const fundMilestone = async (req, res) => {
     }
 
     const amount = milestone.amount || 0;
-    const clientWallet = project.clientWallet || '';
+    const clientWallet = await walletOf(project, 'client');
 
     const chainState = project.escrowAddress ? await chainCheck(req, res, project, milestone, ['FUNDED']) : null;
     if (project.escrowAddress && !chainState) return;
@@ -171,6 +181,7 @@ export const fundMilestone = async (req, res) => {
       type: 'DEPOSIT',
       amount,
       from: clientWallet || 'Client',
+      fromUser: project.client,
       to: 'Escrow Vault',
       txHash: bcResult.txHash || '',
       status: 'CONFIRMED'
@@ -246,7 +257,7 @@ export const approveMilestone = async (req, res) => {
     const { milestone, project } = ctx;
 
     const amount = milestone.amount || 0;
-    const freelancerWallet = project.freelancerWallet || '';
+    const freelancerWallet = await walletOf(project, 'freelancer');
 
     const chainState = project.escrowAddress ? await chainCheck(req, res, project, milestone, ['RELEASED']) : null;
     if (project.escrowAddress && !chainState) return;
@@ -273,6 +284,7 @@ export const approveMilestone = async (req, res) => {
       amount,
       from: 'Escrow Vault',
       to: freelancerWallet || 'Freelancer',
+      toUser: project.freelancer,
       txHash: releaseRes.txHash || '',
       status: 'CONFIRMED'
     });
@@ -315,7 +327,8 @@ export const cancelMilestone = async (req, res) => {
         type: 'REFUND',
         amount: milestone.amount || 0,
         from: 'Escrow Vault',
-        to: project.clientWallet || 'Client',
+        to: (await walletOf(project, 'client')) || 'Client',
+        toUser: project.client,
         txHash: chainState?.txHash || '',
         status: 'CONFIRMED'
       });
@@ -350,7 +363,7 @@ export const claimAfterTimeout = async (req, res) => {
     }
 
     const amount = milestone.amount || 0;
-    const freelancerWallet = project.freelancerWallet || '';
+    const freelancerWallet = await walletOf(project, 'freelancer');
 
     const chainState = project.escrowAddress ? await chainCheck(req, res, project, milestone, ['RELEASED']) : null;
     if (project.escrowAddress && !chainState) return;
@@ -373,6 +386,7 @@ export const claimAfterTimeout = async (req, res) => {
       amount,
       from: 'Escrow Vault',
       to: freelancerWallet || 'Freelancer',
+      toUser: project.freelancer,
       txHash: releaseRes.txHash || '',
       status: 'CONFIRMED'
     });

@@ -21,6 +21,7 @@
     "test:integration": "node tests/integration/part1.mjs && node tests/integration/part2.mjs && node tests/integration/part4.mjs && node tests/integration/part5.mjs",
     "docker:up": "docker compose up --build",
     "docker:down": "docker compose down",
+    "test:payout": "node tests/integration/payout-unit.mjs",
     "test:auth": "node tests/integration/auth-unit.mjs",
     "test:messages": "node tests/integration/messages-unit.mjs",
     "test:sandbox": "node tests/integration/sandbox-unit.mjs",

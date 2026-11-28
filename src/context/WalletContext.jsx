@@ -13,6 +13,7 @@ export const WalletProvider = ({ children }) => {
   const [address, setAddress] = useState(user?.walletAddress || '');
   const [balance, setBalance] = useState(0);
   const [lockedInEscrow, setLockedInEscrow] = useState(0);
+  const [ledgerMode, setLedgerMode] = useState(false);
   const [network, setNetwork] = useState(user?.walletAddress ? 'Sepolia Testnet' : 'Not Connected');
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState(null);
@@ -60,6 +61,7 @@ export const WalletProvider = ({ children }) => {
       const res = await getWalletInfoApi(queryId);
       if (res.data?.success && res.data.wallet) {
         setBalance(res.data.wallet.balanceUSDC || 0);
+        setLedgerMode(Boolean(res.data.wallet.ledgerMode));
         setLockedInEscrow(res.data.wallet.lockedEscrowUSDC || 0);
         if (res.data.wallet.address) setAddress(res.data.wallet.address);
         if (res.data.wallet.network) setNetwork(res.data.wallet.network);
@@ -206,6 +208,7 @@ export const WalletProvider = ({ children }) => {
         shortAddress: shortenAddress(address),
         balance,
         lockedInEscrow,
+        ledgerMode,
         network,
         loading,
         error,

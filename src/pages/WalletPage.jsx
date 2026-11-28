@@ -25,7 +25,7 @@ import { shortenAddress, getEtherscanTxUrl } from '../services/blockchain.js';
 
 export default function WalletPage() {
   const { user } = useAuth();
-  const { address, balance, lockedInEscrow, network, connected, connectWallet, error: walletError, chainEnabled, faucetLoading, claimTestInr, paymentsEnabled, paymentMode, topUpLoading, topUp, walletType, managedAvailable, switchToManaged, loading: walletBusy, payoutConfig, payouts, withdrawLoading, withdraw } = useWallet();
+  const { address, balance, lockedInEscrow, ledgerMode, network, connected, connectWallet, error: walletError, chainEnabled, faucetLoading, claimTestInr, paymentsEnabled, paymentMode, topUpLoading, topUp, walletType, managedAvailable, switchToManaged, loading: walletBusy, payoutConfig, payouts, withdrawLoading, withdraw } = useWallet();
 
   const [transactions, setTransactions] = useState([]);
   const [loading, setLoading] = useState(true);
@@ -333,7 +333,7 @@ export default function WalletPage() {
 
             <div className="grid grid-cols-2 gap-4 pt-4 border-t border-indigo-800/80">
               <div>
-                <span className="text-xs text-indigo-300">Available Balance</span>
+                <span className="text-xs text-indigo-300">{ledgerMode ? 'Total Received (database mode)' : 'Available Balance'}</span>
                 <h3 className="text-2xl sm:text-3xl font-extrabold mt-1 text-white">
                   ₹{balance.toLocaleString()} <span className="text-sm font-semibold text-indigo-300">INR</span>
                 </h3>
